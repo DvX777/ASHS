@@ -270,7 +270,9 @@ async function executeDownload(job: any): Promise<void> {
         const season   = fileMeta.season;
         const totalEps = (db.prepare("SELECT COUNT(DISTINCT episode) as c FROM media_files WHERE media_id=? AND season=?").get(job.media_id, season) as any).c;
         const doneEps  = (db.prepare("SELECT COUNT(DISTINCT episode) as c FROM media_files WHERE media_id=? AND season=? AND status='complete'").get(job.media_id, season) as any).c;
-        if (doneEps >= totalEps && totalEps > 0) {
+        const seasonKey = job.media_id + ":" + season;
+        if (doneEps >= totalEps && totalEps > 0 && !_notifiedSeasons.has(seasonKey)) {
+          _notifiedSeasons.add(seasonKey);
           const seasonBytes = (db.prepare("SELECT COALESCE(SUM(file_size),0) as s FROM media_files WHERE media_id=? AND season=? AND status='complete'").get(job.media_id, season) as any).s;
           await notifySeasonDone({
             title:        mediaMeta?.title ?? job.title,
