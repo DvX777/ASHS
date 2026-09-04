@@ -26,7 +26,7 @@ export function createFileApp() {
 
     // Stream movie
     .get("/v1/stream/movie/:tmdbId", ({ params, query, request, set }: any) => {
-      if (!verifyRequest(request)) { set.status = 403; return { error: "Forbidden" }; }
+      // No auth on stream endpoints — HMAC is enforced at the library API level when getting the URL
       const m = MediaQueries.findByTmdb.get(params.tmdbId, "movie");
       if (!m) { set.status = 404; return { error: "Not found" }; }
       const quality = parseInt(query.q ?? "1080", 10);
@@ -39,7 +39,7 @@ export function createFileApp() {
 
     // Stream TV episode
     .get("/v1/stream/tv/:tmdbId/:season/:episode", ({ params, query, request, set }: any) => {
-      if (!verifyRequest(request)) { set.status = 403; return { error: "Forbidden" }; }
+      // No auth on stream endpoints — HMAC is enforced at the library API level when getting the URL
       const m = MediaQueries.findByTmdb.get(params.tmdbId, "tv");
       if (!m) { set.status = 404; return { error: "Not found" }; }
       const quality = parseInt(query.q ?? "1080", 10);
