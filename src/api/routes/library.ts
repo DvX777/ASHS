@@ -5,9 +5,8 @@ import { checkRateLimit } from "../middleware/rateLimit";
 import { siteAuth } from "../middleware/auth";
 
 function buildStreamUrl(tmdbId: string, type: string, quality: number, season = 0, episode = 0): string {
-  const base = `https://primeshow.online/v1/stream/${type}/${tmdbId}?q=${quality}`;
-  if (type === "tv") return `${base}&s=${season}&e=${episode}`;
-  return base;
+  const token = encodeStreamToken(type, String(tmdbId), quality, season, episode);
+  return "https://primeshow.online/v1/s/" + token;
 }
 
 function formatMedia(m: any, files: any[]) {

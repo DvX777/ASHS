@@ -40,8 +40,9 @@ function sign(method: string, pathname: string): Record<string, string> {
 async function testUrl(url: string): Promise<{ ok: boolean; status: number; size: string; ranges: boolean }> {
   try {
     const r = await fetch(url, { method: "HEAD", headers: { Range: "bytes=0-1023" }, signal: AbortSignal.timeout(8000) });
-    const bytes = parseInt(r.headers.get("content-length") ?? "0", 10);
-    const size  = bytes >= 1e9 ? (bytes/1e9).toFixed(2)+"GB" : bytes >= 1e6 ? (bytes/1e6).toFixed(0)+"MB" : bytes+"B";
+    const cl    = parseInt(r.headers.get("content-length") ?? "0", 10);
+    const bytes = cl > 0 ? cl : parseInt(r.headers.get("x-total-size") ?? "0", 10);
+    const size  = bytes >= 1e9 ? (bytes/1e9).toFixed(2)+"GB" : bytes >= 1e6 ? (bytes/1e6).toFixed(0)+"MB" : bytes > 0 ? bytes+"B" : "?";
     return { ok: r.ok || r.status === 206, status: r.status, size, ranges: r.headers.get("accept-ranges") === "bytes" };
   } catch (e) {
     return { ok: false, status: 0, size: "?", ranges: false };

@@ -27,6 +27,7 @@ export function streamFile(absPath: string, rangeHeader: string | null): Respons
         "Content-Length": String(totalSize),
         "Accept-Ranges": "bytes",
         "Cache-Control": "public, max-age=3600",
+        "X-Total-Size": String(totalSize),
       },
     });
   }
@@ -56,6 +57,7 @@ export function streamFile(absPath: string, rangeHeader: string | null): Respons
       "Content-Range": `bytes ${start}-${end}/${totalSize}`,
       "Accept-Ranges": "bytes",
       "Cache-Control": "public, max-age=3600",
+      "X-Total-Size": String(totalSize),
     },
   });
 }

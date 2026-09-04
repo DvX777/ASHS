@@ -6,6 +6,7 @@ import { Config } from "../config";
 import { db, MediaQueries, FileQueries } from "../db";
 import { streamFile } from "./stream";
 import { resolveMediaPath } from "../storage/paths";
+import { decodeStreamToken } from "../utils/streamToken";
 import { SiteQueries } from "../db";
 import { verifyHMAC } from "../utils/hmac";
 
@@ -51,5 +52,19 @@ export function createFileApp() {
       return streamFile(resolveMediaPath(file.file_path), request.headers.get("Range"));
     })
 
+    // Obfuscated stream endpoint - /v1/s/:token where token is hex-encoded
+    .get("/v1/s/:token", ({ params, request, set }: any) => {
+      const tok = decodeStreamToken(params.token);
+      if (!tok) { set.status = 400; return { error: "Invalid token" }; }
+      if (!tok.valid) { set.status = 410; return { error: "Stream URL expired" }; }
+      const m = MediaQueries.findByTmdb.get(tok.tmdbId, tok.type);
+      if (!m) { set.status = 404; return { error: "Not found" }; }
+      const files = tok.type === "tv"
+        ? (FileQueries.forEpisode as any).all(m.id, tok.season, tok.episode).filter((f: any) => f.status === "complete")
+        : (FileQueries.forMedia as any).all(m.id).filter((f: any) => f.status === "complete");
+      const file = files.find((f: any) => f.quality === tok.quality) ?? files.sort((a: any, b: any) => b.quality - a.quality)[0];
+      if (!file?.file_path) { set.status = 404; return { error: "File not found" }; }
+      return streamFile(resolveMediaPath(file.file_path), request.headers.get("Range"));
+    })
     .all("*", ({ set }: any) => { set.status = 404; return { error: "Not found" }; });
 }
