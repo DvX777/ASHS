@@ -30,41 +30,30 @@ export async function startDownloadManager(): Promise<void> {
 }
 
 async function tick(): Promise<void> {
-  // Pause if disk is critical
   if (isDiskCritical()) {
-    Logger.warn("[DownloadManager] Disk critical ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â pausing downloads");
+    Logger.warn('[DownloadManager] Disk critical - pausing');
     await runCleanupIfNeeded();
     return;
   }
-
-  const { count: active } = QueueQueries.countActive.get() as { count: number };
-  if (active >= Config.MAX_CONCURRENT_DOWNLOADS) return;
-
-  // Find pending media that needs resolving first
-  const pending = db.prepare(`
-    SELECT * FROM media WHERE status = 'pending' LIMIT 5
-  `).all() as any[];
-
+  const pending = db.prepare("SELECT * FROM media WHERE status = 'pending' LIMIT 5").all();
   for (const media of pending) {
-    if ((QueueQueries.countActive.get() as any).count >= Config.MAX_CONCURRENT_DOWNLOADS) break;
+    const { count: active } = QueueQueries.countActive.get();
+    if (active >= Config.MAX_CONCURRENT_DOWNLOADS) break;
     resolveAndEnqueue(media).catch(err =>
-      Logger.error(`[DownloadManager] Resolve error for ${media.tmdb_id}: ${err.message}`)
+      Logger.error('[DownloadManager] Resolve: ' + media.tmdb_id + ': ' + err.message)
     );
-    // Stagger resolver calls ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â avoid MovieBox 429 burst
-    await sleep(3_000);
+    await sleep(3000);
   }
-
-  // Process queued jobs
-  const { count: nowActive } = QueueQueries.countActive.get() as { count: number };
-  if (nowActive >= Config.MAX_CONCURRENT_DOWNLOADS) return;
-
-  const job = QueueQueries.nextQueued.get();
-  if (!job) return;
-
-  // Fire and forget ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â don't block tick
-  executeDownload(job as any).catch(err =>
-    Logger.error(`[DownloadManager] Job ${(job as any).id} crashed: ${err.message}`)
-  );
+  while (true) {
+    const { count: slots } = QueueQueries.countActive.get();
+    if (slots >= Config.MAX_CONCURRENT_DOWNLOADS) break;
+    const job = QueueQueries.nextQueued.get();
+    if (!job) break;
+    executeDownload(job).catch(err =>
+      Logger.error('[DownloadManager] Job ' + job.id + ' crashed: ' + err.message)
+    );
+    await sleep(500);
+  }
 }
 
 async function resolveAndEnqueue(media: any): Promise<void> {

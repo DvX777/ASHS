@@ -2,6 +2,7 @@
 // Starts: API server (:4000), File server (:4001), ingestion scheduler, download manager
 
 import "./db"; // Initialize DB + run setup
+import { db } from "./db";
 import { Config } from "./config";
 import { Logger } from "./utils/logger";
 import { Discord } from "./utils/discord";
@@ -33,6 +34,16 @@ async function main() {
     Logger.info(`[FileServer] Listening on port ${Config.FILE_PORT}`);
   });
 
+
+  // ── Reset orphaned active jobs from previous run ──
+  // If the process crashed while downloading, jobs are stuck as "active".
+  // Reset them to "queued" so they restart cleanly.
+  const orphaned = db.prepare(
+    "UPDATE download_queue SET status='queued', started_at=NULL WHERE status='active'"
+  ).run();
+  if (orphaned.changes > 0) {
+    Logger.info(`[ASHS] Reset ${orphaned.changes} orphaned active job(s) to queued`);
+  }
   // Start background services
   startScheduler().catch(err => Logger.error(`[Scheduler] Fatal: ${err.message}`));
   startDownloadManager().catch(err => Logger.error(`[DownloadManager] Fatal: ${err.message}`));
@@ -45,3 +56,4 @@ main().catch(err => {
   Logger.error(`[ASHS] Fatal startup error: ${err.message}`);
   process.exit(1);
 });
+
