@@ -1,4 +1,4 @@
-// src/download/manager.ts â€” Priority download queue processor (3 concurrent)
+// src/download/manager.ts Ã¢â‚¬â€ Priority download queue processor (3 concurrent)
 import fs from "fs";
 import path from "path";
 import { Config } from "../config";
@@ -32,7 +32,7 @@ export async function startDownloadManager(): Promise<void> {
 async function tick(): Promise<void> {
   // Pause if disk is critical
   if (isDiskCritical()) {
-    Logger.warn("[DownloadManager] Disk critical â€” pausing downloads");
+    Logger.warn("[DownloadManager] Disk critical Ã¢â‚¬â€ pausing downloads");
     await runCleanupIfNeeded();
     return;
   }
@@ -50,7 +50,7 @@ async function tick(): Promise<void> {
     resolveAndEnqueue(media).catch(err =>
       Logger.error(`[DownloadManager] Resolve error for ${media.tmdb_id}: ${err.message}`)
     );
-    // Stagger resolver calls — avoid MovieBox 429 burst
+    // Stagger resolver calls â€” avoid MovieBox 429 burst
     await sleep(3_000);
   }
 
@@ -61,7 +61,7 @@ async function tick(): Promise<void> {
   const job = QueueQueries.nextQueued.get();
   if (!job) return;
 
-  // Fire and forget â€” don't block tick
+  // Fire and forget Ã¢â‚¬â€ don't block tick
   executeDownload(job as any).catch(err =>
     Logger.error(`[DownloadManager] Job ${(job as any).id} crashed: ${err.message}`)
   );
@@ -100,6 +100,15 @@ async function resolveAndEnqueue(media: any): Promise<void> {
 }
 
 async function executeDownload(job: any): Promise<void> {
+  // Skip if file already downloaded and exists on disk
+  const relPath   = buildRelativePath(job.type, job.tmdb_id, job.quality, job.season ?? 0, job.episode ?? 0);
+  const finalPath = path.join(Config.MEDIA_DIR, relPath);
+  if (fs.existsSync(finalPath)) {
+    Logger.info(`[Download] Already exists, skipping: ${job.title} ${job.quality}p`);
+    QueueQueries.markDone.run(job.id);
+    return;
+  }
+
   QueueQueries.markActive.run(job.id);
   const tempPath  = buildTempPath(job.id);
   const relPath   = buildRelativePath(job.type, job.tmdb_id, job.quality, job.season ?? 0, job.episode ?? 0);
@@ -156,12 +165,12 @@ async function executeDownload(job: any): Promise<void> {
     const { all_done } = FileQueries.allComplete.get(job.media_id) as { all_done: number };
     if (all_done) MediaQueries.setStatus.run("ready", job.tmdb_id, job.type);
 
-    Logger.info(`[Download] âœ… Done: ${job.title} ${job.quality}p (${formatBytes(stat.size)})`);
-    await Discord.success("Download Complete", `**${job.title}** â€” ${job.quality}p (${formatBytes(stat.size)})`);
+    Logger.info(`[Download] Ã¢Å“â€¦ Done: ${job.title} ${job.quality}p (${formatBytes(stat.size)})`);
+    await Discord.success("Download Complete", `**${job.title}** Ã¢â‚¬â€ ${job.quality}p (${formatBytes(stat.size)})`);
 
   } catch (err) {
     const msg = (err as Error).message;
-    Logger.error(`[Download] âŒ Failed: ${job.title} ${job.quality}p â€” ${msg}`);
+    Logger.error(`[Download] Ã¢ÂÅ’ Failed: ${job.title} ${job.quality}p Ã¢â‚¬â€ ${msg}`);
     FileQueries.setStatus.run("retrying", msg, job.media_file_id);
     QueueQueries.markFailed.run(msg, job.id);
     // Re-queue if attempts remain
