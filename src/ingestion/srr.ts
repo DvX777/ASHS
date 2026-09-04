@@ -4,7 +4,7 @@ import path from "path";
 import { db, MediaQueries, FileQueries, QueueQueries } from "../db";
 import { Config } from "../config";
 import { Logger } from "../utils/logger";
-import { Discord } from "../utils/discord";
+import { Discord, notifySRR } from "../utils/discord";
 import { buildTempPath, buildRelativePath } from "../storage/paths";
 import { formatBytes } from "../utils/helpers";
 
@@ -159,11 +159,6 @@ export async function runSRR(): Promise<void> {
   const unavailCount = (db.prepare("SELECT COUNT(*) as c FROM media WHERE status='unavailable'").get() as any).c;
   Logger.info(`[SRR] Scan complete. Healed: ${healed} issue(s), Unavailable on MovieBox: ${unavailCount}`);
   if (healed > 0) {
-    await Discord.warning(
-      "🔧 SRR: Issues Detected & Healed",
-      issues.slice(0, 10).join("\n") +
-      (issues.length > 10 ? `\n...and ${issues.length - 10} more` : "") +
-      `\n\n📵 Permanently unavailable on MovieBox: ${unavailCount}`
-    );
+    await notifySRR(healed, issues, unavailCount);
   }
 }

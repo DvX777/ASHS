@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import { Config } from "../config";
 import { Logger } from "../utils/logger";
-import { Discord, notifyDownloadComplete } from "../utils/discord";
+import { Discord, notifyMovieDone, notifySeasonDone, notifyMilestone } from "../utils/discord";
 import { db, MediaQueries, FileQueries, QueueQueries } from "../db";
 import { resolveMovie, resolveTV, resolveTVEpisode, resolveTVShow, TV_STREAM_HEADERS } from "../ingestion/resolver";
 import { downloadFile } from "./downloader";
@@ -256,29 +256,56 @@ async function executeDownload(job: any): Promise<void> {
     if (all_done) MediaQueries.setStatus.run("ready", job.tmdb_id, job.type);
 
     Logger.info(`[Download] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ Done: ${job.title} ${job.quality}p (${formatBytes(stat.size)})`);
-    // Rich Discord notification with full media metadata
-    const mediaMeta = db.prepare("SELECT * FROM media WHERE id=?").get(job.media_id) as any;
-    const fileMeta  = job.media_file_id
-      ? db.prepare("SELECT * FROM media_files WHERE id=?").get(job.media_file_id) as any
-      : null;
-    const qStats = db.prepare("SELECT COUNT(*) as c FROM download_queue WHERE status='done'").get() as any;
-    const tStats = db.prepare("SELECT COUNT(*) as c FROM download_queue WHERE status IN ('done','active','queued')").get() as any;
-    await notifyDownloadComplete({
-      title:      job.title ?? mediaMeta?.title ?? "Unknown",
-      type:       (mediaMeta?.type ?? "movie") as "movie" | "tv",
-      year:       mediaMeta?.year ?? null,
-      quality:    job.quality,
-      sizeBytes:  stat.size,
-      language:   mediaMeta?.stored_language ?? null,
-      season:     fileMeta?.season > 0 ? fileMeta.season : undefined,
-      episode:    fileMeta?.episode > 0 ? fileMeta.episode : undefined,
-      posterPath: mediaMeta?.poster_path ?? null,
-      genres:     mediaMeta?.genres ?? null,
-      rating:     mediaMeta?.vote_average ?? 0,
-      overview:   mediaMeta?.overview ?? null,
-      totalDone:  qStats?.c ?? 0,
-      totalFiles: tStats?.c ?? 0,
-    }).catch(() => {});
+    // Smart notifications: movie = rate-limited individual, TV = season complete only
+    try {
+      const mediaMeta = db.prepare("SELECT * FROM media WHERE id=?").get(job.media_id) as any;
+      const fileMeta  = job.media_file_id
+        ? db.prepare("SELECT * FROM media_files WHERE id=?").get(job.media_file_id) as any
+        : null;
+      const qDone  = (db.prepare("SELECT COUNT(*) as c FROM download_queue WHERE status='done'").get() as any).c;
+      const qTotal = (db.prepare("SELECT COUNT(*) as c FROM download_queue WHERE status IN ('done','active','queued','failed')").get() as any).c;
+
+      if (mediaMeta?.type === "tv" && fileMeta?.season > 0) {
+        // TV: check if this season is fully done (all episodes have at least 1 complete file)
+        const season   = fileMeta.season;
+        const totalEps = (db.prepare("SELECT COUNT(DISTINCT episode) as c FROM media_files WHERE media_id=? AND season=?").get(job.media_id, season) as any).c;
+        const doneEps  = (db.prepare("SELECT COUNT(DISTINCT episode) as c FROM media_files WHERE media_id=? AND season=? AND status='complete'").get(job.media_id, season) as any).c;
+        if (doneEps >= totalEps && totalEps > 0) {
+          const seasonBytes = (db.prepare("SELECT COALESCE(SUM(file_size),0) as s FROM media_files WHERE media_id=? AND season=? AND status='complete'").get(job.media_id, season) as any).s;
+          await notifySeasonDone({
+            title:        mediaMeta?.title ?? job.title,
+            year:         mediaMeta?.year ?? null,
+            season,
+            episodeCount: totalEps,
+            sizeBytes:    seasonBytes,
+            posterPath:   mediaMeta?.poster_path ?? null,
+            rating:       mediaMeta?.vote_average ?? 0,
+            language:     mediaMeta?.stored_language ?? mediaMeta?.original_language ?? null,
+          });
+        }
+        // else: silent — no per-episode spam
+      } else {
+        // Movie: rate-limited notification
+        await notifyMovieDone({
+          title:      job.title ?? mediaMeta?.title ?? "Unknown",
+          year:       mediaMeta?.year ?? null,
+          quality:    job.quality,
+          sizeBytes:  stat.size,
+          language:   mediaMeta?.stored_language ?? mediaMeta?.original_language ?? null,
+          posterPath: mediaMeta?.poster_path ?? null,
+          genres:     mediaMeta?.genres ?? null,
+          rating:     mediaMeta?.vote_average ?? 0,
+          overview:   mediaMeta?.overview ?? null,
+          queueDone:  qDone,
+          queueTotal: qTotal,
+        });
+      }
+
+      // Milestone check (25/50/75/100%)
+      await notifyMilestone(qDone, qTotal);
+    } catch (notifyErr) {
+      Logger.warn("[Discord] Notify error: " + (notifyErr as Error).message);
+    }
 
   } catch (err) {
     const msg = (err as Error).message;

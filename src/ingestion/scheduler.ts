@@ -1,6 +1,6 @@
 ﻿// src/ingestion/scheduler.ts — Cron-based ingestion orchestrator
 import { Logger } from "../utils/logger";
-import { Discord } from "../utils/discord";
+import { Discord, notifyDailyStats } from "../utils/discord";
 import { discoverContent } from "./discovery";
 import { runSRR } from "./srr";
 import { sleep } from "../utils/helpers";
@@ -98,18 +98,18 @@ async function sendDailyStats(): Promise<void> {
     const files  = (db.prepare("SELECT COUNT(*) as c FROM media_files WHERE status='complete'").get() as any).c;
     const bytes  = (db.prepare("SELECT COALESCE(SUM(file_size),0) as s FROM media_files WHERE status='complete'").get() as any).s;
 
-    await Discord.info(
-      "📊 Daily Library Report",
-      [
-        `🎬 Movies ready: **${libMap.movie ?? 0}**`,
-        `📺 TV shows ready: **${libMap.tv ?? 0}**`,
-        `📁 Total files: **${files}** (${formatBytes(bytes)})`,
-        ``,
-        `⏳ Queue — pending: **${qMap.queued ?? 0}** | active: **${qMap.active ?? 0}** | done: **${qMap.done ?? 0}** | failed: **${qMap.failed ?? 0}**`,
-        ``,
-        `💾 HDD: **${formatBytes(disk.used)} / ${formatBytes(disk.total)}** (${(disk.percent * 100).toFixed(1)}% used)`,
-      ].join("\n")
-    );
+    await notifyDailyStats({
+      movies:   libMap.movie  ?? 0,
+      tvShows:  libMap.tv     ?? 0,
+      files:    files,
+      bytes:    bytes,
+      queued:   qMap.queued   ?? 0,
+      active:   qMap.active   ?? 0,
+      done:     qMap.done     ?? 0,
+      failed:   qMap.failed   ?? 0,
+      hddUsed:  disk.used,
+      hddTotal: disk.total,
+    });
   } catch (err) {
     Logger.error(`[Scheduler] Daily stats failed: ${(err as Error).message}`);
   }
