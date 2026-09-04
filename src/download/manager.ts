@@ -61,8 +61,15 @@ async function resolveAndEnqueue(media: any): Promise<void> {
   try {
     if (media.type === "movie") {
       const result = await resolveMovie(media.title, String(media.year ?? ""), media.original_language ?? "en");
-      if (!result || result.sources.length === 0) {
+      if (!result) {
+        // Network error / crash — keep as failed so it retries
         MediaQueries.setStatus.run("failed", media.tmdb_id, media.type);
+        return;
+      }
+      if (result.notFound || result.sources.length === 0) {
+        // MovieBox returned zero results — genuinely not available there
+        Logger.info("[Resolver] Marking unavailable: " + media.title + " (not on MovieBox)");
+        MediaQueries.setStatus.run("unavailable", media.tmdb_id, media.type);
         return;
       }
       // Save moviebox_id + language
@@ -112,7 +119,8 @@ async function resolveAndEnqueue(media: any): Promise<void> {
           const sources = await resolveTV(
             media.title, String(media.year ?? ""), media.original_language ?? "en", sNum, eNum
           );
-          if (!sources || sources.length === 0) continue;
+          if (!sources) continue;  // network error — skip episode but keep trying
+          if (sources.length === 0) { anyEnqueued = false; break; }  // not on MovieBox
           anyEnqueued = true;
 
           for (const src of sources) {

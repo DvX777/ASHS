@@ -156,11 +156,14 @@ export async function runSRR(): Promise<void> {
   }
 
   // ── Summary ────────────────────────────────────────────────────────────────
-  Logger.info(`[SRR] Scan complete. Healed: ${healed} issue(s)`);
+  const unavailCount = (db.prepare("SELECT COUNT(*) as c FROM media WHERE status='unavailable'").get() as any).c;
+  Logger.info(`[SRR] Scan complete. Healed: ${healed} issue(s), Unavailable on MovieBox: ${unavailCount}`);
   if (healed > 0) {
     await Discord.warning(
       "🔧 SRR: Issues Detected & Healed",
-      issues.slice(0, 10).join("\n") + (issues.length > 10 ? `\n...and ${issues.length - 10} more` : "")
+      issues.slice(0, 10).join("\n") +
+      (issues.length > 10 ? `\n...and ${issues.length - 10} more` : "") +
+      `\n\n📵 Permanently unavailable on MovieBox: ${unavailCount}`
     );
   }
 }

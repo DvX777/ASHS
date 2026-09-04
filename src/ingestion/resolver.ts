@@ -175,6 +175,7 @@ export interface ResolvedSource {
 }
 
 export interface ResolveResult {
+  notFound?: boolean; // true = MovieBox has zero results (mark unavailable)
   subjectId: string;
   detailPath: string;
   dubName: string;
@@ -196,12 +197,12 @@ export async function resolveMovie(
     Logger.info("[Resolver] Movie: " + title + " (" + year + ")");
     // subjectType: 1 = Movie (proven from Vidzen moviebox.ts)
     const items = await postSearch(title, 1);
-    if (!items.length) { Logger.warn("[Resolver] No results for: " + title); return null; }
+    if (!items.length) { Logger.warn("[Resolver] No MovieBox results for: " + title); return { notFound: true, subjectId: "", detailPath: "", dubName: "none", language: "none", sources: [] }; }
 
     // Filter to items that have resources
     const eligible = items.filter(i => i.hasResource !== false);
     const match = findBestItem(eligible, title, year);
-    if (!match) { Logger.warn("[Resolver] No title match for: " + title); return null; }
+    if (!match) { Logger.warn("[Resolver] No title match for: " + title); return { notFound: true, subjectId: "", detailPath: "", dubName: "none", language: "none", sources: [] }; }
 
     Logger.info("[Resolver] Matched: " + match.title + " (" + match.releaseDate + ")");
 
@@ -262,11 +263,11 @@ export async function resolveTV(
     Logger.info("[Resolver] TV: " + title + " S" + season + "E" + episode);
     // subjectType: 2 = TV (proven from Vidzen moviebox.ts)
     const items = await postSearch(title, 2);
-    if (!items.length) return null;
+    if (!items.length) { Logger.warn("[Resolver] No MovieBox TV results for: " + title); return []; } // caller treats [] as notFound for TV
 
     const eligible = items.filter((i: any) => i.hasResource !== false);
     const match = findBestItem(eligible, title, year);
-    if (!match) return null;
+    if (!match) { Logger.warn("[Resolver] No TV title match for: " + title); return []; }
 
     const detail = await fetchDetail(match.detailPath);
     let dubs: any[] = [];

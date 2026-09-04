@@ -97,6 +97,7 @@ export const adminRoutes = new Elysia({ prefix: "/v1/admin" })
     const files  = (db.prepare("SELECT COUNT(*) as c FROM media_files WHERE status='complete'").get() as any).c;
     const bytes  = (db.prepare("SELECT COALESCE(SUM(file_size),0) as s FROM media_files WHERE status='complete'").get() as any).s;
     const failing = db.prepare("SELECT COUNT(*) as c FROM media WHERE status='failed'").get() as any;
+    const unavail = db.prepare("SELECT COUNT(*) as c FROM media WHERE status='unavailable'").get() as any;
     const sites  = db.prepare("SELECT COUNT(*) as c FROM approved_sites WHERE enabled=1").get() as any;
 
     let tunnelStatus = "unknown";
@@ -117,6 +118,7 @@ export const adminRoutes = new Elysia({ prefix: "/v1/admin" })
         total_files: files,
         total_bytes: bytes,
         failed_media: failing.c,
+        unavailable_on_moviebox: unavail.c,
       },
       queue: {
         pending:  qMap.queued    ?? 0,
