@@ -5,7 +5,7 @@ import { Config } from "../config";
 import { Logger } from "../utils/logger";
 import { Discord } from "../utils/discord";
 import { db, MediaQueries, FileQueries, QueueQueries } from "../db";
-import { resolveMovie, resolveTV } from "../ingestion/resolver";
+import { resolveMovie, resolveTV, resolveTVEpisode, resolveTVShow, TV_STREAM_HEADERS } from "../ingestion/resolver";
 import { downloadFile } from "./downloader";
 import { computeSHA256, verifySizeApprox, moveFile } from "./verifier";
 import { buildAbsolutePath, buildTempPath, buildRelativePath } from "../storage/paths";
@@ -88,61 +88,72 @@ async function resolveAndEnqueue(media: any): Promise<void> {
         }
       }
     } else if (media.type === "tv") {
-      // Fetch season list from TMDB
-      const tmdbRes = await fetch(
-        `https://api.themoviedb.org/3/tv/${media.tmdb_id}?api_key=${Config.TMDB_API_KEY}`,
-        { signal: AbortSignal.timeout(10_000) }
-      );
-      if (!tmdbRes.ok) { MediaQueries.setStatus.run("failed", media.tmdb_id, media.type); return; }
-      const show: any = await tmdbRes.json();
-      const seasons: any[] = (show.seasons || []).filter((s: any) => s.season_number > 0);
-      if (!seasons.length) { MediaQueries.setStatus.run("failed", media.tmdb_id, media.type); return; }
+      // ── Step 1: Search MovieBox ONCE for the show (get subjectId) ─────────
+      Logger.info("[DownloadManager] Resolving TV show: " + media.title);
+      const showInfo = await resolveTVShow(media.title, String(media.year ?? ""));
 
-      MediaQueries.setStatus.run("downloading", media.tmdb_id, media.type);
-      let anyEnqueued = false;
-
-      for (const season of seasons.slice(0, 3)) {
-        const sNum = season.season_number;
-        let epRes: any;
-        try {
-          epRes = await fetch(
-            `https://api.themoviedb.org/3/tv/${media.tmdb_id}/season/${sNum}?api_key=${Config.TMDB_API_KEY}`,
-            { signal: AbortSignal.timeout(10_000) }
-          );
-        } catch { continue; }
-        if (!epRes.ok) continue;
-        const seasonData: any = await epRes.json();
-        const episodes: any[] = seasonData.episodes || [];
-
-        for (const ep of episodes) {
-          const eNum = ep.episode_number;
-          const sources = await resolveTV(
-            media.title, String(media.year ?? ""), media.original_language ?? "en", sNum, eNum
-          );
-          if (!sources) continue;  // network error — skip episode but keep trying
-          if (sources.length === 0) { anyEnqueued = false; break; }  // not on MovieBox
-          anyEnqueued = true;
-
-          for (const src of sources) {
-            const relP = buildRelativePath("tv", media.tmdb_id, src.quality, sNum, eNum);
-            const absP = path.join(Config.MEDIA_DIR, relP);
-            if (fs.existsSync(absP)) continue;
-            const fileRow = FileQueries.insertFile.get(media.id, sNum, eNum, src.quality, src.dub, src.type, null);
-            if (!fileRow) continue;
-            const job = QueueQueries.enqueue.get(media.id, fileRow.id, 30);
-            if (job) {
-              db.prepare("UPDATE download_queue SET source_url=?, source_headers=? WHERE id=?")
-                .run(src.url, JSON.stringify(src.headers), job.id);
-            }
-          }
-          await sleep(2_000);
-        }
-        await sleep(3_000);
+      if (!showInfo) {
+        Logger.info("[Resolver] TV not on MovieBox: " + media.title);
+        MediaQueries.setStatus.run("unavailable", media.tmdb_id, media.type);
+        return;
       }
 
-      if (!anyEnqueued) { MediaQueries.setStatus.run("failed", media.tmdb_id, media.type); return; }
-      db.prepare("UPDATE media SET stored_language=?, updated_at=datetime('now') WHERE id=?")
-        .run(media.original_language ?? "Original", media.id);
+      // Cache subjectId in moviebox_id — used by executeDownload for fast episode URL fetch
+      db.prepare("UPDATE media SET moviebox_id=?, stored_language=?, updated_at=datetime('now') WHERE id=?")
+        .run(showInfo.subjectId, showInfo.dubName, media.id);
+      const tvSubjectId = showInfo.subjectId;
+      const tvDetailPath = showInfo.detailPath;
+
+      // ── Step 3: Fetch episode list from TMDB ──────────────────────────────
+      const tmdbRes = await fetch(
+        "https://api.themoviedb.org/3/tv/" + media.tmdb_id + "?api_key=" + Config.TMDB_API_KEY,
+        { signal: AbortSignal.timeout(10_000) }
+      ).catch(() => null);
+      if (!tmdbRes || !tmdbRes.ok) { MediaQueries.setStatus.run("failed", media.tmdb_id, media.type); return; }
+      const show: any = await tmdbRes.json();
+      const seasons: any[] = (show.seasons || []).filter((s: any) => s.season_number > 0);
+      if (!seasons.length) { MediaQueries.setStatus.run("unavailable", media.tmdb_id, media.type); return; }
+
+      MediaQueries.setStatus.run("downloading", media.tmdb_id, media.type);
+// language already stored above via resolveTVShow
+
+      // ── Step 4: Create file records + queue jobs WITHOUT source URLs ───────
+      // URLs are resolved lazily in executeDownload (always fresh, never expired)
+      let totalQueued = 0;
+      for (const season of seasons) {
+        const sNum = season.season_number;
+        const epRes = await fetch(
+          "https://api.themoviedb.org/3/tv/" + media.tmdb_id + "/season/" + sNum + "?api_key=" + Config.TMDB_API_KEY,
+          { signal: AbortSignal.timeout(10_000) }
+        ).catch(() => null);
+        if (!epRes || !epRes.ok) continue;
+        const seasonData: any = await epRes.json();
+
+        for (const ep of (seasonData.episodes || [])) {
+          const eNum = ep.episode_number;
+          // Queue top 2 qualities (1080 + 720) — actual quality confirmed at download time
+          for (const q of [1080, 720]) {
+            const relP = buildRelativePath("tv", media.tmdb_id, q, sNum, eNum);
+            if (fs.existsSync(path.join(Config.MEDIA_DIR, relP))) continue;
+            const fileRow = FileQueries.insertFile.get(media.id, sNum, eNum, q, tvItems[0]?.dub ?? "Original", "mp4", null);
+            if (!fileRow) continue;
+            const job = QueueQueries.enqueue.get(media.id, fileRow.id, 30);
+            // Store detailPath in source_headers so executeDownload can use it
+            if (job) {
+              db.prepare("UPDATE download_queue SET source_headers=? WHERE id=?")
+                .run(JSON.stringify({ ...TV_STREAM_HEADERS, _tv_detail_path: tvDetailPath }), job.id);
+              totalQueued++;
+            }
+          }
+        }
+        await sleep(1_000); // 1s between TMDB season fetches
+      }
+
+      Logger.info("[DownloadManager] TV " + media.title + ": queued " + totalQueued + " episode files");
+      if (totalQueued === 0) {
+        MediaQueries.setStatus.run("unavailable", media.tmdb_id, media.type);
+      }
+
     } // end else if tv
   } catch (err) {
     Logger.error(`[Resolver] ${media.tmdb_id}: ${(err as Error).message}`);
@@ -171,15 +182,45 @@ async function executeDownload(job: any): Promise<void> {
     Logger.info(`[Download] Starting: ${job.title} ${job.quality}p (job #${job.id})`);
     FileQueries.setStatus.run("downloading", null, job.media_file_id);
 
-    // Re-resolve if no URL stored or token likely expired (>90min since start)
+    // Re-resolve: movies use resolveMovie, TV episodes use resolveTVEpisode (lazy, always fresh)
     let sourceUrl = job.source_url;
     if (!sourceUrl) {
       const media = db.prepare("SELECT * FROM media WHERE id=?").get(job.media_id) as any;
-      const res   = await resolveMovie(media.title, String(media.year ?? ""), media.original_language ?? "en");
-      const src   = res?.sources.find((s: any) => s.quality === job.quality);
-      if (!src) throw new Error("Could not re-resolve source URL");
-      sourceUrl = src.url;
-      Object.assign(headers, src.headers);
+
+      if (media.type === "tv") {
+        // TV: need subjectId from media.moviebox_id + episode coords from file record
+        const fileRec = db.prepare("SELECT * FROM media_files WHERE id=?").get(job.media_file_id) as any;
+        const season  = fileRec?.season ?? 1;
+        const episode = fileRec?.episode ?? 1;
+
+        // If we have a stored subjectId use it, otherwise do a full search
+        if (media.moviebox_id && media.moviebox_id !== "tv-pending") {
+          // Fast path: known subjectId + detailPath, fetch fresh stream URL
+          const storedDetailPath = headers._tv_detail_path ?? "";
+          delete headers._tv_detail_path;
+          const src = await resolveTVEpisode(media.moviebox_id, storedDetailPath, season, episode, job.quality);
+          if (!src) throw new Error("Could not resolve TV episode S" + season + "E" + episode);
+          sourceUrl = src.url;
+          Object.assign(headers, src.headers);
+        } else {
+          // Slow path: full search (first episode for this show)
+          const sources = await resolveTV(media.title, String(media.year ?? ""), media.original_language ?? "en", season, episode);
+          if (!sources || !sources.length) throw new Error("TV not found on MovieBox: " + media.title);
+          const src = sources.find((s: any) => s.quality === job.quality) ?? sources[0];
+          sourceUrl = src.url;
+          Object.assign(headers, src.headers);
+          // Cache the subjectId for future episodes (extract from URL if possible)
+          // We don't have subjectId directly from resolveTV — mark as resolved
+          db.prepare("UPDATE media SET moviebox_id='tv-resolved' WHERE id=?").run(media.id);
+        }
+      } else {
+        // Movie: standard re-resolve
+        const res = await resolveMovie(media.title, String(media.year ?? ""), media.original_language ?? "en");
+        const src = res?.sources.find((s: any) => s.quality === job.quality);
+        if (!src) throw new Error("Could not re-resolve source URL");
+        sourceUrl = src.url;
+        Object.assign(headers, src.headers);
+      }
     }
 
     const { size } = await downloadFile(sourceUrl, headers, tempPath, ({ percent }) => {

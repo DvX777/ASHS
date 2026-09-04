@@ -303,3 +303,87 @@ export async function resolveTV(
     return null;
   }
 }
+
+// Exported for use by executeDownload when re-resolving TV episode URLs
+export const TV_STREAM_HEADERS = {
+  "Origin":  H5_API,
+  "Referer": H5_API + "/",
+  "User-Agent": UA_WIN,
+  "x-forwarded-for": "103.20.104.10",
+};
+
+/**
+ * Lightweight TV episode resolver.
+ * Skips the full search — uses already-known subjectId + detailPath.
+ * Call this right before download to get a fresh (non-expired) stream URL.
+ */
+export async function resolveTVEpisode(
+  subjectId: string,
+  detailPath: string,
+  season: number,
+  episode: number,
+  quality?: number
+): Promise<ResolvedSource | null> {
+  try {
+    const streams = await fetchStreams(subjectId, detailPath, season, episode);
+    if (!streams.length) return null;
+
+    const mapped: ResolvedSource[] = streams
+      .filter((s: any) => s.url)
+      .map((s: any) => ({
+        type:      s.format === "MP4" ? "mp4" : "hls",
+        url:       s.url,
+        quality:   parseInt(s.resolutions) || 0,
+        sizeBytes: parseInt(s.size) || 0,
+        dub:       "Original",
+        headers:   TV_STREAM_HEADERS,
+      }))
+      .sort((a: any, b: any) => b.quality - a.quality);
+
+    if (!mapped.length) return null;
+
+    // Return the requested quality, or best available
+    return mapped.find((s: any) => s.quality === quality) ?? mapped[0];
+  } catch (err) {
+    Logger.error("[Resolver] resolveTVEpisode S" + season + "E" + episode + ": " + (err as Error).message);
+    return null;
+  }
+}
+
+/**
+ * Search MovieBox for a TV show and return its subjectId + detailPath.
+ * Used to cache the show ID so individual episodes can be resolved quickly.
+ */
+export async function resolveTVShow(
+  title: string, year: string
+): Promise<{ subjectId: string; detailPath: string; dubName: string } | null> {
+  try {
+    const items = await postSearch(title, 2); // subjectType 2 = TV
+    if (!items.length) return null;
+    const eligible = items.filter((i: any) => i.hasResource !== false);
+    const match = findBestItem(eligible, title, year);
+    if (!match) return null;
+
+    // Fetch dubs to get best dubName
+    const detail = await fetchDetail(match.detailPath);
+    let dubs: any[] = [];
+    if (detail?.subject?.dubs) {
+      dubs = detail.subject.dubs.filter((d: any) => !d.lanName?.toLowerCase().includes("sub"));
+    }
+    if (!dubs.length) {
+      dubs = [{ subjectId: match.subjectId, detailPath: match.detailPath, lanName: "Original" }];
+    }
+    const bestDub = dubs.find((d: any) => d.lanName?.toLowerCase().includes("english"))
+      ?? dubs.find((d: any) => d.original === true)
+      ?? dubs[0];
+
+    return {
+      subjectId:  bestDub?.subjectId ?? match.subjectId,
+      detailPath: bestDub?.detailPath ?? match.detailPath,
+      dubName:    (bestDub?.lanName ?? "Original").replace(/ dub| Audio/gi, "").trim(),
+    };
+  } catch (err) {
+    Logger.error("[Resolver] resolveTVShow error for " + title + ": " + (err as Error).message);
+    return null;
+  }
+}
