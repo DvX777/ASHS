@@ -56,6 +56,45 @@ export const libraryRoutes = new Elysia({ prefix: "/v1/library" })
     if (!m) return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
     return formatMedia(m, FileQueries.forMedia.all(m.id));
   })
+
+  .get("/tv/:tmdbId/:season", ({ params }: any) => {
+    const m = MediaQueries.findByTmdb.get(params.tmdbId, "tv");
+    if (!m) return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+    const season = parseInt(params.season, 10);
+    const files  = (db.prepare(
+      "SELECT * FROM media_files WHERE media_id=? AND season=? ORDER BY episode ASC, quality DESC"
+    ).all(m.id, season) as any[]);
+    if (!files.length) return new Response(JSON.stringify({ error: "Season not found" }), { status: 404 });
+
+    // Group by episode
+    const episodes: Record<number, any> = {};
+    for (const f of files) {
+      if (!episodes[f.episode]) {
+        episodes[f.episode] = {
+          episode: f.episode,
+          season,
+          status: f.status,
+          sources: [],
+        };
+      }
+      if (f.status === "complete" && f.file_path) {
+        episodes[f.episode].sources.push({
+          quality: f.quality,
+          format:  f.format,
+          size_bytes: f.file_size,
+          stream_url: buildStreamUrl(m.tmdb_id, "tv", f.quality, season, f.episode),
+        });
+      }
+    }
+
+    return {
+      tmdb_id: m.tmdb_id,
+      title:   m.title,
+      season,
+      language: m.stored_language,
+      episodes: Object.values(episodes).sort((a: any, b: any) => a.episode - b.episode),
+    };
+  })
   .get("/check/:tmdbId", ({ params, query }: any) => {
     const type = query.type ?? "movie";
     const m = MediaQueries.findByTmdb.get(params.tmdbId, type);

@@ -2,6 +2,7 @@
 import { Logger } from "../utils/logger";
 import { Discord } from "../utils/discord";
 import { discoverContent } from "./discovery";
+import { runSRR } from "./srr";
 import { sleep } from "../utils/helpers";
 import { isDiskCritical } from "../storage/stats";
 import { cleanTempDir } from "../storage/cleanup";
@@ -22,6 +23,7 @@ export async function startScheduler(): Promise<void> {
 
   // Initial run after 30s startup delay
   await sleep(30_000);
+  await runSRR();   // heal any broken state first
   await runDiscovery();
 
   // Set up recurring timers
@@ -30,6 +32,7 @@ export async function startScheduler(): Promise<void> {
       Logger.warn("[Scheduler] Disk critical — skipping ingestion");
       return;
     }
+    await runSRR();
     await runDiscovery();
   }, INTERVALS[0].ms);
 

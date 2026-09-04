@@ -3,9 +3,11 @@ import { Elysia } from "elysia";
 import { db, MediaQueries, QueueQueries, SiteQueries } from "../../db";
 import { adminAuth } from "../middleware/auth";
 import { generateApiKey } from "../../utils/hmac";
-import { getMediaStats, getTempStats } from "../../storage/stats";
+import { getMediaStats, getTempStats, formatDiskStats } from "../../storage/stats";
 import { cleanTempDir } from "../../storage/cleanup";
 import { Logger } from "../../utils/logger";
+import { runSRR } from "../../ingestion/srr";
+import { execSync } from "child_process";
 
 export const adminRoutes = new Elysia({ prefix: "/v1/admin" })
   .use(adminAuth)
@@ -82,4 +84,53 @@ export const adminRoutes = new Elysia({ prefix: "/v1/admin" })
     // Write a trigger file — the scheduler polls for this
     require("fs").writeFileSync("/tmp/ashs_ingest_trigger", Date.now().toString());
     return { ok: true, message: "Ingestion triggered" };
+  })
+
+  // Full system health (detailed)
+  .get("/health", () => {
+    const media  = getMediaStats();
+    const temp   = getTempStats();
+    const qStats = QueueQueries.stats.all() as any[];
+    const qMap   = Object.fromEntries(qStats.map((r: any) => [r.status, r.count]));
+    const lib    = db.prepare("SELECT type, COUNT(*) as c FROM media WHERE status='ready' GROUP BY type").all() as any[];
+    const libMap = Object.fromEntries(lib.map((r: any) => [r.type, r.c]));
+    const files  = (db.prepare("SELECT COUNT(*) as c FROM media_files WHERE status='complete'").get() as any).c;
+    const bytes  = (db.prepare("SELECT COALESCE(SUM(file_size),0) as s FROM media_files WHERE status='complete'").get() as any).s;
+    const failing = db.prepare("SELECT COUNT(*) as c FROM media WHERE status='failed'").get() as any;
+    const sites  = db.prepare("SELECT COUNT(*) as c FROM approved_sites WHERE enabled=1").get() as any;
+
+    let tunnelStatus = "unknown";
+    try { tunnelStatus = execSync("systemctl is-active cloudflared 2>/dev/null", { timeout: 2000 }).toString().trim(); } catch {}
+
+    return {
+      status: tunnelStatus === "active" ? "ok" : "degraded",
+      uptime_seconds: Math.floor(process.uptime()),
+      tunnel: tunnelStatus === "active" ? "connected" : "disconnected",
+      memory: process.memoryUsage(),
+      storage: {
+        hdd:  { ...media,  summary: formatDiskStats(media) },
+        nvme: { ...temp,   summary: formatDiskStats(temp)  },
+      },
+      library: {
+        movies:      libMap.movie  ?? 0,
+        tv_shows:    libMap.tv     ?? 0,
+        total_files: files,
+        total_bytes: bytes,
+        failed_media: failing.c,
+      },
+      queue: {
+        pending:  qMap.queued    ?? 0,
+        active:   qMap.active    ?? 0,
+        done:     qMap.done      ?? 0,
+        failed:   qMap.failed    ?? 0,
+        cancelled: qMap.cancelled ?? 0,
+      },
+      sites: { approved: sites.c },
+    };
+  })
+
+  // Trigger Smart Re-Resolve manually
+  .post("/srr", async () => {
+    runSRR().catch(err => Logger.error("[SRR] Manual trigger failed: " + err.message));
+    return { ok: true, message: "Smart Re-Resolve started in background" };
   });
