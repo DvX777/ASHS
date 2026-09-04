@@ -15,7 +15,7 @@ function formatMedia(m: any, files: any[]) {
     year: m.year, poster_path: m.poster_path, backdrop_path: m.backdrop_path,
     overview: m.overview, genres: m.genres ? JSON.parse(m.genres) : [],
     popularity: m.popularity, vote_average: m.vote_average, runtime: m.runtime,
-    language: m.stored_language, status: m.status,
+    language: m.stored_language && m.stored_language !== 'Original' ? m.stored_language : m.original_language, status: m.status,
     sources: files.filter(f => f.status === "complete" && f.file_path)
       .sort((a, b) => b.quality - a.quality)
       .map(f => ({

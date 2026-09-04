@@ -66,6 +66,42 @@ export const adminRoutes = new Elysia({ prefix: "/v1/admin" })
     rate_limit_rpm: s.rate_limit_rpm, enabled: !!s.enabled, created_at: s.created_at,
   })))
 
+  // Trigger immediate TMDB metadata refresh for ready movies with missing metadata
+  .post("/refresh-meta", async ({ set }: any) => {
+    // Run in background
+    (async () => {
+      const stale = db.prepare(
+        "SELECT id, tmdb_id, type FROM media WHERE status IN ('ready','downloading') AND (poster_path IS NULL OR overview IS NULL) ORDER BY popularity DESC LIMIT 300"
+      ).all() as any[];
+      let updated = 0;
+      for (const m of stale) {
+        const ep = m.type === "tv"
+          ? `https://api.themoviedb.org/3/tv/${m.tmdb_id}?api_key=${Config.TMDB_API_KEY}`
+          : `https://api.themoviedb.org/3/movie/${m.tmdb_id}?api_key=${Config.TMDB_API_KEY}`;
+        try {
+          const res = await fetch(ep, { signal: AbortSignal.timeout(8000) });
+          if (!res.ok) continue;
+          const d: any = await res.json();
+          db.prepare(
+            "UPDATE media SET poster_path=COALESCE(poster_path,?), backdrop_path=COALESCE(backdrop_path,?), overview=COALESCE(overview,?), genres=COALESCE(genres,?), runtime=COALESCE(NULLIF(runtime,0),?), updated_at=datetime('now') WHERE id=?"
+          ).run(
+            d.poster_path ?? null,
+            d.backdrop_path ?? null,
+            d.overview ?? null,
+            d.genres?.length ? JSON.stringify(d.genres.map((g: any) => g.name)) : null,
+            d.runtime ?? d.episode_run_time?.[0] ?? null,
+            m.id
+          );
+          updated++;
+          await new Promise(r => setTimeout(r, 250));
+        } catch {}
+      }
+      Logger.info("[Admin] refresh-meta: updated " + updated + "/" + stale.length + " records");
+    })().catch(e => Logger.error("[Admin] refresh-meta error: " + e.message));
+
+    return { ok: true, message: "Metadata refresh started in background for up to 300 titles" };
+  })
+
   // Remove content from library (marks DB + deletes files from disk)
   .delete("/media/:tmdbId", ({ params, query }: any) => {
     const type = query.type ?? "movie";

@@ -39,14 +39,26 @@ function upsertMedia(item: TmdbItem, type: "movie" | "tv"): number | null {
   const title     = item.title ?? item.name ?? "";
   const origTitle = item.original_title ?? item.original_name ?? null;
   const year      = parseInt((item.release_date ?? item.first_air_date ?? "").slice(0, 4)) || null;
+  // Genre IDs from list endpoint (will be resolved to names by stale refresh)
+  const genreIds  = item.genre_ids?.length ? JSON.stringify(item.genre_ids) : null;
   const row = db.prepare(`
-    INSERT INTO media (tmdb_id, type, title, original_title, year, popularity, vote_average, vote_count, original_language, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+    INSERT INTO media (tmdb_id, type, title, original_title, year, popularity, vote_average, vote_count,
+      original_language, poster_path, backdrop_path, overview, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
     ON CONFLICT(tmdb_id, type) DO UPDATE SET
-      popularity = excluded.popularity, vote_average = excluded.vote_average,
-      vote_count = excluded.vote_count, updated_at = datetime('now')
+      popularity     = excluded.popularity,
+      vote_average   = excluded.vote_average,
+      vote_count     = excluded.vote_count,
+      poster_path    = COALESCE(media.poster_path, excluded.poster_path),
+      backdrop_path  = COALESCE(media.backdrop_path, excluded.backdrop_path),
+      overview       = COALESCE(media.overview, excluded.overview),
+      updated_at     = datetime('now')
     RETURNING id
-  `).get(tmdbId, type, title, origTitle, year, item.popularity, item.vote_average, item.vote_count, item.original_language) as any;
+  `).get(
+    tmdbId, type, title, origTitle, year,
+    item.popularity, item.vote_average, item.vote_count, item.original_language,
+    item.poster_path ?? null, item.backdrop_path ?? null, item.overview ?? null
+  ) as any;
   return row?.id ?? null;
 }
 
