@@ -1,9 +1,10 @@
-// src/api/app.ts
+﻿// src/api/app.ts
 import { Elysia } from "elysia";
 import cors from "@elysiajs/cors";
 import { execSync } from "child_process";
 import { Config } from "../config";
 import { db, QueueQueries } from "../db";
+import { logAccess } from "../api/middleware/accessLog";
 import { getMediaStats, getTempStats, formatDiskStats } from "../storage/stats";
 import { libraryRoutes } from "./routes/library";
 import { adminRoutes } from "./routes/admin";
@@ -20,6 +21,7 @@ function getTunnelStatus(): "connected" | "disconnected" | "unknown" {
 export function createApiApp() {
   return new Elysia()
     .use(cors({ origin: Config.CORS_ORIGINS.includes("*") ? true : Config.CORS_ORIGINS }))
+    .onAfterHandle(({ request, set }: any) => { logAccess(request, set); })
     .get("/health", () => {
       const media  = getMediaStats();
       const temp   = getTempStats();
@@ -48,3 +50,4 @@ export function createApiApp() {
     .use(adminRoutes)
     .all("*", ({ set }: any) => { set.status = 404; return { error: "Not found" }; });
 }
+

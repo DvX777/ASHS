@@ -1,4 +1,4 @@
-// src/download/manager.ts ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Priority download queue processor (3 concurrent)
+﻿// src/download/manager.ts ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Priority download queue processor (3 concurrent)
 import fs from "fs";
 import path from "path";
 import { Config } from "../config";
@@ -32,7 +32,7 @@ export async function startDownloadManager(): Promise<void> {
 async function tick(): Promise<void> {
   // Pause if disk is critical
   if (isDiskCritical()) {
-    Logger.warn("[DownloadManager] Disk critical ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â pausing downloads");
+    Logger.warn("[DownloadManager] Disk critical ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â pausing downloads");
     await runCleanupIfNeeded();
     return;
   }
@@ -50,7 +50,7 @@ async function tick(): Promise<void> {
     resolveAndEnqueue(media).catch(err =>
       Logger.error(`[DownloadManager] Resolve error for ${media.tmdb_id}: ${err.message}`)
     );
-    // Stagger resolver calls Ã¢â‚¬â€ avoid MovieBox 429 burst
+    // Stagger resolver calls ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â avoid MovieBox 429 burst
     await sleep(3_000);
   }
 
@@ -61,7 +61,7 @@ async function tick(): Promise<void> {
   const job = QueueQueries.nextQueued.get();
   if (!job) return;
 
-  // Fire and forget ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â don't block tick
+  // Fire and forget ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â don't block tick
   executeDownload(job as any).catch(err =>
     Logger.error(`[DownloadManager] Job ${(job as any).id} crashed: ${err.message}`)
   );
@@ -92,7 +92,61 @@ async function resolveAndEnqueue(media: any): Promise<void> {
         }
       }
     }
-    // TV show resolving would go here (Phase 3)
+    } else if (media.type === "tv") {
+      // Fetch season list from TMDB
+      const tmdbRes = await fetch(
+        `https://api.themoviedb.org/3/tv/${media.tmdb_id}?api_key=${Config.TMDB_API_KEY}`,
+        { signal: AbortSignal.timeout(10_000) }
+      );
+      if (!tmdbRes.ok) { MediaQueries.setStatus.run("failed", media.tmdb_id, media.type); return; }
+      const show: any = await tmdbRes.json();
+      const seasons: any[] = (show.seasons || []).filter((s: any) => s.season_number > 0);
+      if (!seasons.length) { MediaQueries.setStatus.run("failed", media.tmdb_id, media.type); return; }
+
+      MediaQueries.setStatus.run("downloading", media.tmdb_id, media.type);
+      let anyEnqueued = false;
+
+      for (const season of seasons.slice(0, 3)) {
+        const sNum = season.season_number;
+        let epRes: any;
+        try {
+          epRes = await fetch(
+            `https://api.themoviedb.org/3/tv/${media.tmdb_id}/season/${sNum}?api_key=${Config.TMDB_API_KEY}`,
+            { signal: AbortSignal.timeout(10_000) }
+          );
+        } catch { continue; }
+        if (!epRes.ok) continue;
+        const seasonData: any = await epRes.json();
+        const episodes: any[] = seasonData.episodes || [];
+
+        for (const ep of episodes) {
+          const eNum = ep.episode_number;
+          const sources = await resolveTV(
+            media.title, String(media.year ?? ""), media.original_language ?? "en", sNum, eNum
+          );
+          if (!sources || sources.length === 0) continue;
+          anyEnqueued = true;
+
+          for (const src of sources) {
+            const relP = buildRelativePath("tv", media.tmdb_id, src.quality, sNum, eNum);
+            const absP = path.join(Config.MEDIA_DIR, relP);
+            if (fs.existsSync(absP)) continue;
+            const fileRow = FileQueries.insertFile.get(media.id, sNum, eNum, src.quality, src.dub, src.type, null);
+            if (!fileRow) continue;
+            const job = QueueQueries.enqueue.get(media.id, fileRow.id, 30);
+            if (job) {
+              db.prepare("UPDATE download_queue SET source_url=?, source_headers=? WHERE id=?")
+                .run(src.url, JSON.stringify(src.headers), job.id);
+            }
+          }
+          await sleep(2_000);
+        }
+        await sleep(3_000);
+      }
+
+      if (!anyEnqueued) { MediaQueries.setStatus.run("failed", media.tmdb_id, media.type); return; }
+      db.prepare("UPDATE media SET stored_language=?, updated_at=datetime('now') WHERE id=?")
+        .run(media.original_language ?? "Original", media.id);
   } catch (err) {
     Logger.error(`[Resolver] ${media.tmdb_id}: ${(err as Error).message}`);
     MediaQueries.setStatus.run("failed", media.tmdb_id, media.type);
@@ -163,12 +217,12 @@ async function executeDownload(job: any): Promise<void> {
     const { all_done } = FileQueries.allComplete.get(job.media_id) as { all_done: number };
     if (all_done) MediaQueries.setStatus.run("ready", job.tmdb_id, job.type);
 
-    Logger.info(`[Download] ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Done: ${job.title} ${job.quality}p (${formatBytes(stat.size)})`);
-    await Discord.success("Download Complete", `**${job.title}** ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${job.quality}p (${formatBytes(stat.size)})`);
+    Logger.info(`[Download] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ Done: ${job.title} ${job.quality}p (${formatBytes(stat.size)})`);
+    await Discord.success("Download Complete", `**${job.title}** ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ${job.quality}p (${formatBytes(stat.size)})`);
 
   } catch (err) {
     const msg = (err as Error).message;
-    Logger.error(`[Download] ÃƒÂ¢Ã‚ÂÃ…â€™ Failed: ${job.title} ${job.quality}p ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${msg}`);
+    Logger.error(`[Download] ÃƒÆ’Ã‚Â¢Ãƒâ€šÃ‚ÂÃƒâ€¦Ã¢â‚¬â„¢ Failed: ${job.title} ${job.quality}p ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ${msg}`);
     FileQueries.setStatus.run("retrying", msg, job.media_file_id);
     QueueQueries.markFailed.run(msg, job.id);
     // Re-queue if attempts remain
