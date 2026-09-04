@@ -37,6 +37,7 @@ export async function startScheduler(): Promise<void> {
   }, INTERVALS[0].ms);
 
   scheduleDailyStats();
+  scheduleStaleRefresh();
 
   // Poll for manual trigger file
   setInterval(async () => {
@@ -111,5 +112,73 @@ async function sendDailyStats(): Promise<void> {
     );
   } catch (err) {
     Logger.error(`[Scheduler] Daily stats failed: ${(err as Error).message}`);
+  }
+}
+
+// Weekly stale content refresh — re-fetches TMDB metadata for 'ready' media
+// Updated metadata (poster, rating, overview) improves library quality
+function scheduleStaleRefresh(): void {
+  function msUntilSunday3am(): number {
+    const now  = new Date();
+    const next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 3, 0, 0, 0));
+    // Advance to next Sunday
+    const daysUntilSun = (7 - now.getUTCDay()) % 7 || 7;
+    next.setUTCDate(next.getUTCDate() + daysUntilSun);
+    return next.getTime() - now.getTime();
+  }
+  function scheduleNext() {
+    setTimeout(async () => {
+      await runStaleRefresh();
+      scheduleNext();
+    }, msUntilSunday3am());
+  }
+  scheduleNext();
+  Logger.info("[Scheduler] Weekly TMDB stale refresh scheduled (Sundays 3 AM UTC)");
+}
+
+async function runStaleRefresh(): Promise<void> {
+  Logger.info("[StaleRefresh] Refreshing TMDB metadata for ready content...");
+  try {
+    const { db }    = await import("../db");
+    const stale     = db.prepare(`
+      SELECT * FROM media WHERE status IN ('ready','downloading')
+        AND (updated_at < datetime('now', '-7 days') OR poster_path IS NULL)
+      ORDER BY popularity DESC LIMIT 200
+    `).all() as any[];
+
+    let updated = 0;
+    for (const m of stale) {
+      const endpoint = m.type === "tv"
+        ? "https://api.themoviedb.org/3/tv/" + m.tmdb_id
+        : "https://api.themoviedb.org/3/movie/" + m.tmdb_id;
+      try {
+        const res = await fetch(endpoint + "?api_key=" + Config.TMDB_API_KEY,
+          { signal: AbortSignal.timeout(8000) });
+        if (!res.ok) continue;
+        const d: any = await res.json();
+
+        db.prepare(`UPDATE media SET
+          poster_path=?, backdrop_path=?, overview=?, genres=?,
+          vote_average=?, vote_count=?, popularity=?, runtime=?,
+          updated_at=datetime('now') WHERE id=?`
+        ).run(
+          d.poster_path ?? m.poster_path,
+          d.backdrop_path ?? m.backdrop_path,
+          d.overview ?? m.overview,
+          JSON.stringify((d.genres || []).map((g: any) => g.name)),
+          d.vote_average ?? m.vote_average,
+          d.vote_count   ?? m.vote_count,
+          d.popularity   ?? m.popularity,
+          d.runtime ?? d.episode_run_time?.[0] ?? m.runtime,
+          m.id
+        );
+        updated++;
+        await sleep(300); // gentle rate-limit
+      } catch {}
+    }
+    Logger.info("[StaleRefresh] Updated " + updated + " / " + stale.length + " records");
+    await Discord.info("TMDB Refresh Complete", "Updated metadata for " + updated + " titles");
+  } catch (err) {
+    Logger.error("[StaleRefresh] Failed: " + (err as Error).message);
   }
 }

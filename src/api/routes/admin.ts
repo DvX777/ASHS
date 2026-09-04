@@ -6,6 +6,10 @@ import { generateApiKey } from "../../utils/hmac";
 import { getMediaStats, getTempStats, formatDiskStats } from "../../storage/stats";
 import { cleanTempDir } from "../../storage/cleanup";
 import { Logger } from "../../utils/logger";
+import { db as _db } from "../../db";
+import path from "path";
+import fs from "fs";
+import { Config } from "../../config";
 import { runSRR } from "../../ingestion/srr";
 import { execSync } from "child_process";
 
@@ -62,12 +66,47 @@ export const adminRoutes = new Elysia({ prefix: "/v1/admin" })
     rate_limit_rpm: s.rate_limit_rpm, enabled: !!s.enabled, created_at: s.created_at,
   })))
 
-  // Remove content from library
+  // Remove content from library (marks DB + deletes files from disk)
   .delete("/media/:tmdbId", ({ params, query }: any) => {
     const type = query.type ?? "movie";
+    const media = MediaQueries.findByTmdb.get(params.tmdbId, type);
+    if (!media) return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+
+    // Find all completed files and delete from disk
+    const files = db.prepare("SELECT * FROM media_files WHERE media_id=?").all(media.id) as any[];
+    let deletedFiles = 0;
+    let freedBytes   = 0;
+
+    for (const f of files) {
+      if (f.file_path) {
+        const abs = path.join(Config.MEDIA_DIR, f.file_path);
+        try {
+          if (fs.existsSync(abs)) {
+            const size = fs.statSync(abs).size;
+            fs.unlinkSync(abs);
+            freedBytes += size;
+            deletedFiles++;
+          }
+        } catch (e) {
+          Logger.warn("[Admin] Could not delete file: " + abs);
+        }
+      }
+      // Also remove any .part temp files
+      try {
+        const tempFiles = fs.readdirSync(Config.TEMP_DIR).filter(t => t.includes("dl_") && t.endsWith(".part"));
+        for (const t of tempFiles) fs.unlinkSync(path.join(Config.TEMP_DIR, t));
+      } catch {}
+    }
+
+    // Cancel queued/active jobs for this media
+    db.prepare("UPDATE download_queue SET status='cancelled' WHERE media_id=? AND status IN ('queued','active')").run(media.id);
+
+    // Mark media as removed
     MediaQueries.setStatus.run("removed", params.tmdbId, type);
-    Logger.info(`[Admin] Removed: ${params.tmdbId} (${type})`);
-    return { ok: true };
+
+    const freed = freedBytes > 1e9 ? (freedBytes/1e9).toFixed(2)+" GB" : (freedBytes/1e6).toFixed(0)+" MB";
+    Logger.info("[Admin] Removed: " + params.tmdbId + " (" + type + ") — " + deletedFiles + " files, " + freed + " freed");
+    return { ok: true, deleted_files: deletedFiles, freed_bytes: freedBytes, freed };
   })
 
   // Clean temp dir manually
