@@ -1,31 +1,17 @@
-﻿#!/usr/bin/env bun
-// test-stream.ts - Test ASHS library and get a stream source URL
-// Works both locally and on the dedi.
-//
-// Usage:
-//   On dedi (auto-reads DB):
-//     bun scripts/test-stream.ts [tmdb_id]
-//
-//   Locally or anywhere (set env vars):
-//     SITE_KEY=<your_api_key> SITE_DOMAIN=vidzen.fun bun scripts/test-stream.ts [tmdb_id]
-//     SITE_KEY=abc123 BASE_URL=https://primeshow.online bun scripts/test-stream.ts 27205
-//
-// Env vars:
-//   BASE_URL     - ASHS base URL (default: https://primeshow.online)
-//   SITE_DOMAIN  - Your approved site domain
-//   SITE_KEY     - Your site API key
-//   DB_PATH      - SQLite path (auto-used if on dedi and file exists)
+#!/usr/bin/env bun
+// test-stream.ts - Test ASHS sources and stream availability
+// Usage (dedi):  bun scripts/test-stream.ts [tmdb_id|--all]
+// Usage (local): $env:SITE_KEY="..."; $env:SITE_DOMAIN="vidzen.fun"; bun scripts/test-stream.ts [tmdb_id|--all]
 
 import crypto from "crypto";
 import fs from "fs";
 
 const BASE = process.env.BASE_URL ?? "https://primeshow.online";
 
-// ── Get site credentials ───────────────────────────────────────────────────
+// Get credentials
 let siteDomain = process.env.SITE_DOMAIN ?? "";
 let siteKey    = process.env.SITE_KEY    ?? "";
 
-// Auto-read from DB if running on dedi and no env vars set
 if (!siteKey) {
   const DB_PATH = process.env.DB_PATH ?? "/opt/ashs/db/ashs.sqlite3";
   if (fs.existsSync(DB_PATH)) {
@@ -38,111 +24,112 @@ if (!siteKey) {
 }
 
 if (!siteKey || !siteDomain) {
-  console.error("No credentials found. Set SITE_KEY and SITE_DOMAIN env vars:");
-  console.error("  SITE_KEY=your_key SITE_DOMAIN=vidzen.fun bun scripts/test-stream.ts");
+  console.error("Set SITE_KEY and SITE_DOMAIN env vars, or run on the dedi.");
+  console.error("  PowerShell: $env:SITE_KEY=\"key\"; $env:SITE_DOMAIN=\"vidzen.fun\"; bun scripts/test-stream.ts");
   process.exit(1);
 }
 
-console.log("Base URL: ", BASE);
-console.log("Site:     ", siteDomain);
-console.log("Key:      ", siteKey.slice(0, 8) + "...");
-
-// ── HMAC signer ───────────────────────────────────────────────────────────
+// HMAC signer
 function sign(method: string, pathname: string): Record<string, string> {
   const ts  = Math.floor(Date.now() / 1000);
-  const msg = method + ":" + pathname + ":" + ts;
-  const sig = crypto.createHmac("sha256", siteKey).update(msg).digest("hex");
-  return {
-    "X-ASHS-Site":      siteDomain,
-    "X-ASHS-Timestamp": String(ts),
-    "X-ASHS-Signature": sig,
-  };
+  const sig = crypto.createHmac("sha256", siteKey).update(method + ":" + pathname + ":" + ts).digest("hex");
+  return { "X-ASHS-Site": siteDomain, "X-ASHS-Timestamp": String(ts), "X-ASHS-Signature": sig };
 }
 
-// ── Pick a movie ──────────────────────────────────────────────────────────
-const tmdbArg = process.argv[2];
-let tmdbId: string;
-
-if (tmdbArg) {
-  tmdbId = tmdbArg;
-  console.log("\nTesting TMDB ID:", tmdbId);
-} else {
-  // List movies and pick the first ready one
-  console.log("\nFetching movie list...");
-  const listPath = "/v1/library/movies?limit=5&sort=popular";
-  const listRes  = await fetch(BASE + listPath, { headers: sign("GET", listPath) });
-  if (!listRes.ok) {
-    console.error("List error", listRes.status, await listRes.text());
-    process.exit(1);
+// Test a single stream URL (HEAD request)
+async function testUrl(url: string): Promise<{ ok: boolean; status: number; size: string; ranges: boolean }> {
+  try {
+    const r = await fetch(url, { method: "HEAD", headers: { Range: "bytes=0-1023" }, signal: AbortSignal.timeout(8000) });
+    const bytes = parseInt(r.headers.get("content-length") ?? "0", 10);
+    const size  = bytes >= 1e9 ? (bytes/1e9).toFixed(2)+"GB" : bytes >= 1e6 ? (bytes/1e6).toFixed(0)+"MB" : bytes+"B";
+    return { ok: r.ok || r.status === 206, status: r.status, size, ranges: r.headers.get("accept-ranges") === "bytes" };
+  } catch (e) {
+    return { ok: false, status: 0, size: "?", ranges: false };
   }
-  const list: any = await listRes.json();
-  const movies = list.movies ?? list.items ?? list ?? [];
-  if (!movies.length) { console.error("No movies available yet."); process.exit(1); }
-
-  console.log("\nTop movies in library:");
-  movies.slice(0, 5).forEach((m: any, i: number) => {
-    console.log("  " + (i+1) + ". " + m.title + " (" + m.year + ") - TMDB:" + m.tmdb_id);
-  });
-
-  tmdbId = String(movies[0].tmdb_id);
-  console.log("\nUsing first result - TMDB:", tmdbId);
 }
 
-// ── Fetch movie detail + sources ──────────────────────────────────────────
-const pathname = "/v1/library/movies/" + tmdbId;
-console.log("\nCalling:", BASE + pathname);
-const res = await fetch(BASE + pathname, { headers: sign("GET", pathname) });
+const arg = process.argv[2];
 
-if (res.status === 404) { console.error("Movie not in library yet - try a different TMDB ID"); process.exit(1); }
-if (!res.ok)            { console.error("API error", res.status, await res.text()); process.exit(1); }
+// ── SINGLE MOVIE TEST ────────────────────────────────────────────────────────
+if (arg && arg !== "--all") {
+  const pathname = "/v1/library/movies/" + arg;
+  const res = await fetch(BASE + pathname, { headers: sign("GET", pathname) });
+  if (!res.ok) { console.error("Error", res.status, await res.text()); process.exit(1); }
+  const movie: any = await res.json();
 
-const movie: any = await res.json();
+  console.log("\n" + movie.title + " (" + movie.year + ") — TMDB:" + arg);
+  console.log("Rating: " + movie.vote_average + "/10  |  Audio: " + (movie.stored_language ?? movie.original_language));
+  console.log("Status: " + movie.status);
 
-console.log("");
-console.log("════════════════════════════════════");
-console.log("Title:   ", movie.title, "(" + movie.year + ")");
-console.log("Rating:  ", (movie.vote_average ?? 0) + "/10");
-console.log("Audio:   ", movie.stored_language ?? movie.original_language ?? "?");
-console.log("Status:  ", movie.status);
-console.log("════════════════════════════════════");
+  if (!movie.sources?.length) {
+    console.log("No sources yet (still downloading or failed).");
+    process.exit(0);
+  }
 
-// ── Print all sources ─────────────────────────────────────────────────────
-if (!movie.sources?.length) {
-  console.log("\nNo stream sources available yet (still downloading).");
+  console.log("\nSources:");
+  for (const src of movie.sources) {
+    const t = await testUrl(src.stream_url);
+    const icon = t.ok ? "OK " : "FAIL";
+    console.log("  [" + icon + "] " + src.quality + "p  " + t.size + "  HTTP:" + t.status + "  Ranges:" + (t.ranges ? "yes" : "no"));
+    console.log("         " + src.stream_url);
+  }
   process.exit(0);
 }
 
-console.log("\nAvailable Sources:");
-for (const src of movie.sources) {
-  const size = src.size_bytes >= 1e9
-    ? (src.size_bytes / 1e9).toFixed(2) + " GB"
-    : (src.size_bytes / 1e6).toFixed(0) + " MB";
-  console.log("  [" + src.quality + "p]  " + size + "  (" + (src.format ?? "mp4") + ")");
-  console.log("       " + src.stream_url);
-}
+// ── BATCH TEST (--all or no arg) ─────────────────────────────────────────────
+const limit  = arg === "--all" ? 50 : 20;
+const listPath = "/v1/library/movies?limit=" + limit;
+console.log("Fetching " + limit + " movies from " + BASE + "...");
 
-// ── Test best source with HEAD request ────────────────────────────────────
-const best = movie.sources[0];
-console.log("\nTesting " + best.quality + "p stream...");
-try {
-  const head = await fetch(best.stream_url, {
-    method: "HEAD",
-    headers: { Range: "bytes=0-1023" },
-    signal: AbortSignal.timeout(10_000),
-  });
-  console.log("  Status:        ", head.status, head.statusText);
-  console.log("  Content-Type:  ", head.headers.get("content-type") ?? "?");
-  console.log("  Content-Length:", head.headers.get("content-length") ?? "?", "bytes");
-  console.log("  Accept-Ranges: ", head.headers.get("accept-ranges") ?? "?");
+const listRes = await fetch(BASE + listPath, { headers: sign("GET", listPath) });
+if (!listRes.ok) { console.error("List error", listRes.status, await listRes.text()); process.exit(1); }
+const list: any  = await listRes.json();
+const movies: any[] = list.movies ?? list.items ?? list ?? [];
 
-  if (head.ok || head.status === 206) {
-    console.log("\n  STREAM LIVE - byte-range enabled, ready to play");
-  } else {
-    console.log("\n  Stream not accessible (status:", head.status + ")");
+if (!movies.length) { console.log("No movies in library yet."); process.exit(0); }
+
+console.log("Testing " + movies.length + " movies...\n");
+
+// Table header
+const W = { title: 30, tmdb: 8, qual: 12, size: 8, stream: 6 };
+console.log("TMDB ID  " + "Title".padEnd(W.title) + "  Qualities   Size       Stream");
+console.log("-".repeat(90));
+
+let pass = 0, fail = 0, noSrc = 0;
+
+for (const m of movies) {
+  const detailPath = "/v1/library/movies/" + m.tmdb_id;
+  const dr = await fetch(BASE + detailPath, { headers: sign("GET", detailPath) });
+  if (!dr.ok) { noSrc++; continue; }
+  const detail: any = await dr.json();
+
+  const title = (m.title ?? "?").slice(0, W.title).padEnd(W.title);
+  const tmdb  = String(m.tmdb_id).padEnd(8);
+
+  if (!detail.sources?.length) {
+    console.log(tmdb + " " + title + "  (no sources yet)");
+    noSrc++;
+    continue;
   }
-} catch (e) {
-  console.error("  HEAD request failed:", (e as Error).message);
+
+  // Test best source
+  const best = detail.sources[0];
+  const t    = await testUrl(best.stream_url);
+  const quals = detail.sources.map((s: any) => s.quality + "p").join("+");
+  const icon  = t.ok ? "OK " : "FAIL";
+
+  console.log(tmdb + " " + title + "  " + quals.padEnd(12) + t.size.padEnd(10) + "[" + icon + "] HTTP:" + t.status);
+
+  if (t.ok) pass++; else fail++;
+
+  // Small delay to avoid hammering
+  await new Promise(r => setTimeout(r, 200));
 }
 
-console.log("\n--- Stream URL (use this in your player) ---");
-console.log(best.stream_url);
+console.log("\n" + "=".repeat(90));
+console.log("RESULTS: " + pass + " OK  |  " + fail + " FAIL  |  " + noSrc + " no-source");
+console.log(pass + "/" + (pass + fail + noSrc) + " movies fully ready to stream");
+
+if (fail > 0) {
+  console.log("\nFailed streams may still be downloading. Re-run in a few minutes.");
+}
