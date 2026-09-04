@@ -1,11 +1,21 @@
-﻿// src/api/app.ts
+// src/api/app.ts
 import { Elysia } from "elysia";
 import cors from "@elysiajs/cors";
+import { execSync } from "child_process";
 import { Config } from "../config";
 import { db, QueueQueries } from "../db";
 import { getMediaStats, getTempStats, formatDiskStats } from "../storage/stats";
 import { libraryRoutes } from "./routes/library";
 import { adminRoutes } from "./routes/admin";
+
+function getTunnelStatus(): "connected" | "disconnected" | "unknown" {
+  try {
+    const out = execSync("systemctl is-active cloudflared 2>/dev/null", { encoding: "utf-8", timeout: 2000 }).trim();
+    return out === "active" ? "connected" : "disconnected";
+  } catch {
+    return "unknown";
+  }
+}
 
 export function createApiApp() {
   return new Elysia()
@@ -30,6 +40,7 @@ export function createApiApp() {
           total_files: (db.prepare("SELECT COUNT(*) as c FROM media_files WHERE status='complete'").get() as any)?.c ?? 0,
         },
         queue: { pending: qMap.queued ?? 0, active: qMap.active ?? 0, failed: qMap.failed ?? 0, done_total: qMap.done ?? 0 },
+        tunnel: getTunnelStatus(),
         memory: process.memoryUsage(),
       };
     })
