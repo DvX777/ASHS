@@ -1,4 +1,4 @@
-// src/download/manager.ts — Priority download queue processor (3 concurrent)
+// src/download/manager.ts â€” Priority download queue processor (3 concurrent)
 import fs from "fs";
 import path from "path";
 import { Config } from "../config";
@@ -32,7 +32,7 @@ export async function startDownloadManager(): Promise<void> {
 async function tick(): Promise<void> {
   // Pause if disk is critical
   if (isDiskCritical()) {
-    Logger.warn("[DownloadManager] Disk critical — pausing downloads");
+    Logger.warn("[DownloadManager] Disk critical â€” pausing downloads");
     await runCleanupIfNeeded();
     return;
   }
@@ -50,6 +50,8 @@ async function tick(): Promise<void> {
     resolveAndEnqueue(media).catch(err =>
       Logger.error(`[DownloadManager] Resolve error for ${media.tmdb_id}: ${err.message}`)
     );
+    // Stagger resolver calls — avoid MovieBox 429 burst
+    await sleep(3_000);
   }
 
   // Process queued jobs
@@ -59,7 +61,7 @@ async function tick(): Promise<void> {
   const job = QueueQueries.nextQueued.get();
   if (!job) return;
 
-  // Fire and forget — don't block tick
+  // Fire and forget â€” don't block tick
   executeDownload(job as any).catch(err =>
     Logger.error(`[DownloadManager] Job ${(job as any).id} crashed: ${err.message}`)
   );
@@ -154,12 +156,12 @@ async function executeDownload(job: any): Promise<void> {
     const { all_done } = FileQueries.allComplete.get(job.media_id) as { all_done: number };
     if (all_done) MediaQueries.setStatus.run("ready", job.tmdb_id, job.type);
 
-    Logger.info(`[Download] ✅ Done: ${job.title} ${job.quality}p (${formatBytes(stat.size)})`);
-    await Discord.success("Download Complete", `**${job.title}** — ${job.quality}p (${formatBytes(stat.size)})`);
+    Logger.info(`[Download] âœ… Done: ${job.title} ${job.quality}p (${formatBytes(stat.size)})`);
+    await Discord.success("Download Complete", `**${job.title}** â€” ${job.quality}p (${formatBytes(stat.size)})`);
 
   } catch (err) {
     const msg = (err as Error).message;
-    Logger.error(`[Download] ❌ Failed: ${job.title} ${job.quality}p — ${msg}`);
+    Logger.error(`[Download] âŒ Failed: ${job.title} ${job.quality}p â€” ${msg}`);
     FileQueries.setStatus.run("retrying", msg, job.media_file_id);
     QueueQueries.markFailed.run(msg, job.id);
     // Re-queue if attempts remain
