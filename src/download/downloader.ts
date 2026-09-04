@@ -1,4 +1,4 @@
-﻿// src/download/downloader.ts — HTTP stream downloader with resume support
+// src/download/downloader.ts — HTTP stream downloader with resume support
 import fs from "fs";
 import { Logger } from "../utils/logger";
 
@@ -31,6 +31,27 @@ export async function downloadFile(
     "user-agent": headers["user-agent"] ?? "Mozilla/5.0",
   };
   if (startByte > 0) fetchHeaders["Range"] = `bytes=${startByte}-`;
+
+  // ── CDN-specific Origin/Referer injection ──────────────────────────────
+  // MovieBox BunnyCDN zones reject requests without the correct Origin header
+  try {
+    const hostname = new URL(url).hostname;
+    if (hostname.includes("hakunaymatata.com") || hostname.includes("dreadnought")) {
+      // BunnyCDN / Vidrock-Atlas / MovieBox MP4s
+      fetchHeaders["Origin"]  = "https://fmoviesunblocked.net";
+      fetchHeaders["Referer"] = "https://fmoviesunblocked.net/";
+    } else if (hostname.includes("aoneroom.com") || hostname.includes("h5-api")) {
+      // MovieBox H5 API streams
+      fetchHeaders["Origin"]        = "https://h5.aoneroom.com";
+      fetchHeaders["Referer"]       = "https://h5.aoneroom.com/";
+      fetchHeaders["x-client-info"] = '{"timezone":"Asia/Dhaka"}';
+    } else if (!fetchHeaders["Origin"]) {
+      // Vidrock HLS / fallback
+      fetchHeaders["Origin"]  = "https://vidrock.ru";
+      fetchHeaders["Referer"] = "https://vidrock.ru/";
+    }
+  } catch { /* invalid URL — skip */ }
+  // ──────────────────────────────────────────────────────────────────────
 
   const res = await fetch(url, {
     headers: fetchHeaders,
