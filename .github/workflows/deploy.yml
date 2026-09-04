@@ -1,0 +1,47 @@
+# .github/workflows/deploy.yml
+# CI/CD using a self-hosted runner installed on the Dedi.
+# No GitHub Actions minutes are used — the runner is your own server.
+#
+# Setup (one-time on Dedi):
+#   Go to: GitHub repo → Settings → Actions → Runners → New self-hosted runner
+#   Follow the Linux/x64 instructions to install the runner on the Dedi.
+#   Then: sudo ./svc.sh install && sudo ./svc.sh start
+#
+# After that, every push to main auto-deploys.
+
+name: Deploy to Dedi
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:   # Allow manual trigger from GitHub UI
+
+jobs:
+  deploy:
+    runs-on: self-hosted   # Runs directly on your Dedi — FREE, no billing
+
+    steps:
+      - name: Checkout latest code
+        uses: actions/checkout@v4
+        with:
+          clean: true
+
+      - name: Install dependencies
+        run: bun install --production
+
+      - name: Run database migrations
+        run: bun run scripts/migrate.ts
+        env:
+          DB_PATH: /opt/ashs/db/ashs.sqlite3
+
+      - name: Restart ASHS service
+        run: |
+          sudo systemctl restart ashs
+          sleep 3
+          sudo systemctl is-active ashs || (sudo journalctl -u ashs -n 30 && exit 1)
+
+      - name: Health check
+        run: |
+          sleep 2
+          curl -sf http://localhost:4000/health | python3 -m json.tool
+          echo "✅ Deploy successful"

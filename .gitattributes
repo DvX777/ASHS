@@ -1,0 +1,19 @@
+# Default: auto line endings
+* text=auto
+
+# Shell scripts MUST be LF (Linux Dedi)
+*.sh text eol=lf
+
+# TypeScript/JS: LF
+*.ts text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.sql text eol=lf
+*.md text eol=lf
+
+# Binary files
+*.sqlite3 binary
+*.mp4 binary
+*.mkv binary

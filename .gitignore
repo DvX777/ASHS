@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+bun.lockb
+
+# Build output
+dist/
+
+# Environment — NEVER commit
+.env
+
+# Database — stays on server
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+
+# Media storage — on HDD, not in repo
+media/
+temp/
+*.part
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+scripts/test-resolver.ts
