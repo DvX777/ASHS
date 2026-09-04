@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import { Config } from "../config";
 import { Logger } from "../utils/logger";
-import { Discord } from "../utils/discord";
+import { Discord, notifyDownloadComplete } from "../utils/discord";
 import { db, MediaQueries, FileQueries, QueueQueries } from "../db";
 import { resolveMovie, resolveTV, resolveTVEpisode, resolveTVShow, TV_STREAM_HEADERS } from "../ingestion/resolver";
 import { downloadFile } from "./downloader";
@@ -256,7 +256,29 @@ async function executeDownload(job: any): Promise<void> {
     if (all_done) MediaQueries.setStatus.run("ready", job.tmdb_id, job.type);
 
     Logger.info(`[Download] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ Done: ${job.title} ${job.quality}p (${formatBytes(stat.size)})`);
-    await Discord.success("Download Complete", `**${job.title}** ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ${job.quality}p (${formatBytes(stat.size)})`);
+    // Rich Discord notification with full media metadata
+    const mediaMeta = db.prepare("SELECT * FROM media WHERE id=?").get(job.media_id) as any;
+    const fileMeta  = job.media_file_id
+      ? db.prepare("SELECT * FROM media_files WHERE id=?").get(job.media_file_id) as any
+      : null;
+    const qStats = db.prepare("SELECT COUNT(*) as c FROM download_queue WHERE status='done'").get() as any;
+    const tStats = db.prepare("SELECT COUNT(*) as c FROM download_queue WHERE status IN ('done','active','queued')").get() as any;
+    await notifyDownloadComplete({
+      title:      job.title ?? mediaMeta?.title ?? "Unknown",
+      type:       (mediaMeta?.type ?? "movie") as "movie" | "tv",
+      year:       mediaMeta?.year ?? null,
+      quality:    job.quality,
+      sizeBytes:  stat.size,
+      language:   mediaMeta?.stored_language ?? null,
+      season:     fileMeta?.season > 0 ? fileMeta.season : undefined,
+      episode:    fileMeta?.episode > 0 ? fileMeta.episode : undefined,
+      posterPath: mediaMeta?.poster_path ?? null,
+      genres:     mediaMeta?.genres ?? null,
+      rating:     mediaMeta?.vote_average ?? 0,
+      overview:   mediaMeta?.overview ?? null,
+      totalDone:  qStats?.c ?? 0,
+      totalFiles: tStats?.c ?? 0,
+    }).catch(() => {});
 
   } catch (err) {
     const msg = (err as Error).message;
