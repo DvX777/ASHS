@@ -111,14 +111,23 @@ export async function notifyDownloadComplete(opts: {
     fields.push({ name: "Year", value: String(year), inline: true });
   }
   if (language) {
-    fields.push({ name: "Audio", value: language, inline: true });
+    // Map TMDB language code to human-readable name
+    const LANG_MAP: Record<string, string> = {
+      en: "English", fr: "French", es: "Spanish", de: "German",
+      it: "Italian", pt: "Portuguese", ja: "Japanese", ko: "Korean",
+      zh: "Chinese", hi: "Hindi", ar: "Arabic", ru: "Russian",
+      tr: "Turkish", pl: "Polish", nl: "Dutch", sv: "Swedish",
+      th: "Thai", id: "Indonesian", vi: "Vietnamese", fa: "Persian",
+    };
+    const langLabel = LANG_MAP[language.toLowerCase()] ?? language;
+    fields.push({ name: "Audio", value: langLabel, inline: true });
   }
   if (genres) {
     fields.push({ name: "Genres", value: genres, inline: false });
   }
   if (rating && rating > 0) {
     const stars = Math.round(rating / 2);
-    const starStr = "*".repeat(stars) + "o".repeat(5 - stars);
+    const starStr = "⭐".repeat(stars) + "⬜".repeat(5 - stars);
     fields.push({ name: "TMDB Rating", value: rating.toFixed(1) + "/10  " + starStr, inline: true });
   }
 
@@ -133,7 +142,7 @@ export async function notifyDownloadComplete(opts: {
     : "";
 
   const embed: RichEmbed = {
-    title:     (isTV ? "TV  " : "Movie  ") + title + (epTag ? "  " + epTag : "") + " (" + (year ?? "?") + ")",
+    title:     (isTV ? "[TV] " : "[Movie] ") + title + (epTag ? " • " + epTag : "") + " (" + (year ?? "?") + ")",
     description: desc,
     color:     isTV ? COLORS.tv : COLORS.movie,
     fields,
