@@ -91,7 +91,6 @@ async function resolveAndEnqueue(media: any): Promise<void> {
             .run(src.url, JSON.stringify(src.headers), job.id);
         }
       }
-    }
     } else if (media.type === "tv") {
       // Fetch season list from TMDB
       const tmdbRes = await fetch(
@@ -147,6 +146,7 @@ async function resolveAndEnqueue(media: any): Promise<void> {
       if (!anyEnqueued) { MediaQueries.setStatus.run("failed", media.tmdb_id, media.type); return; }
       db.prepare("UPDATE media SET stored_language=?, updated_at=datetime('now') WHERE id=?")
         .run(media.original_language ?? "Original", media.id);
+    } // end else if tv
   } catch (err) {
     Logger.error(`[Resolver] ${media.tmdb_id}: ${(err as Error).message}`);
     MediaQueries.setStatus.run("failed", media.tmdb_id, media.type);
@@ -231,3 +231,5 @@ async function executeDownload(job: any): Promise<void> {
     try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch {}
   }
 }
+
+
