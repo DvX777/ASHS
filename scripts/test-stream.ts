@@ -58,7 +58,7 @@ if (arg && arg !== "--all") {
   const movie: any = await res.json();
 
   console.log("\n" + movie.title + " (" + movie.year + ") — TMDB:" + arg);
-  console.log("Rating: " + movie.vote_average + "/10  |  Audio: " + (movie.stored_language ?? movie.original_language));
+  console.log("Rating: " + movie.vote_average + "/10  |  Audio: " + (movie.stored_language ?? movie.original_language ?? "?"));
   console.log("Status: " + movie.status);
 
   if (!movie.sources?.length) {
@@ -81,7 +81,7 @@ const limit  = arg === "--all" ? 50 : 20;
 const listPath = "/v1/library/movies?limit=" + limit;
 console.log("Fetching " + limit + " movies from " + BASE + "...");
 
-const listRes = await fetch(BASE + listPath, { headers: sign("GET", listPath) });
+const listRes = await fetch(BASE + listPath, { headers: sign("GET", "/v1/library/movies") });
 if (!listRes.ok) { console.error("List error", listRes.status, await listRes.text()); process.exit(1); }
 const list: any  = await listRes.json();
 const movies: any[] = list.movies ?? list.items ?? list ?? [];
