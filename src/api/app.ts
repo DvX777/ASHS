@@ -8,6 +8,7 @@ import { logAccess } from "../api/middleware/accessLog";
 import { getMediaStats, getTempStats, formatDiskStats } from "../storage/stats";
 import { libraryRoutes } from "./routes/library";
 import { adminRoutes } from "./routes/admin";
+import { createFileApp } from "../fileserver/app";
 
 function getTunnelStatus(): "connected" | "disconnected" | "unknown" {
   try {
@@ -48,6 +49,7 @@ export function createApiApp() {
     })
     .use(libraryRoutes)
     .use(adminRoutes)
+    .use(createFileApp())   // Mount /v1/stream/* on port 4000 so CF Tunnel exposes it
     .all("*", ({ set }: any) => { set.status = 404; return { error: "Not found" }; });
 }
 
