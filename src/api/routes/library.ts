@@ -53,8 +53,32 @@ export const libraryRoutes = new Elysia({ prefix: "/v1/library" })
   })
   .get("/tv/:tmdbId", ({ params }: any) => {
     const m = MediaQueries.findByTmdb.get(params.tmdbId, "tv");
-    if (!m) return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
-    return formatMedia(m, FileQueries.forMedia.all(m.id));
+    if (!m) return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+    const allFiles = FileQueries.forMedia.all(m.id) as any[];
+    const seasonMap: Record<number, { eps: Set<number>; done: number; total: number }> = {};
+    for (const f of allFiles) {
+      if (!f.season) continue;
+      if (!seasonMap[f.season]) seasonMap[f.season] = { eps: new Set(), done: 0, total: 0 };
+      seasonMap[f.season].eps.add(f.episode);
+      seasonMap[f.season].total++;
+      if (f.status === "complete") seasonMap[f.season].done++;
+    }
+    const seasons = Object.entries(seasonMap)
+      .sort(([a], [b]) => Number(a) - Number(b))
+      .map(([s, v]) => ({
+        season: Number(s),
+        episode_count: v.eps.size,
+        ready: v.done === v.total && v.total > 0,
+      }));
+    return {
+      tmdb_id: m.tmdb_id, type: "tv", title: m.title, original_title: m.original_title,
+      year: m.year, poster_path: m.poster_path, backdrop_path: m.backdrop_path,
+      overview: m.overview, genres: m.genres ? JSON.parse(m.genres) : [],
+      popularity: m.popularity, vote_average: m.vote_average,
+      language: m.stored_language && m.stored_language !== "Original" ? m.stored_language : m.original_language,
+      status: m.status, seasons,
+      _note: "Use /v1/library/tv/" + m.tmdb_id + "/{season} for episode stream URLs",
+    };
   })
 
   .get("/tv/:tmdbId/:season", ({ params }: any) => {
