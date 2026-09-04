@@ -3,6 +3,7 @@ import { Elysia } from "elysia";
 import { db, MediaQueries, FileQueries } from "../../db";
 import { checkRateLimit } from "../middleware/rateLimit";
 import { siteAuth } from "../middleware/auth";
+import { encodeStreamToken } from "../../utils/streamToken";
 
 function buildStreamUrl(tmdbId: string, type: string, quality: number, season = 0, episode = 0): string {
   const token = encodeStreamToken(type, String(tmdbId), quality, season, episode);
