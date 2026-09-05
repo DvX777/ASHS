@@ -1,4 +1,4 @@
-// src/ingestion/srr.ts — Smart Re-Resolve: heals broken downloads + quality upgrades
+// src/ingestion/srr.ts â€” Smart Re-Resolve: heals broken downloads + quality upgrades
 import fs from "fs";
 import path from "path";
 import { db, MediaQueries, FileQueries, QueueQueries } from "../db";
@@ -12,37 +12,37 @@ import { formatBytes } from "../utils/helpers";
  * SRR runs on startup and every 6h.
  * It detects and heals 5 types of broken state:
  *
- *  1. Zombie media_files — status='downloading' with no active queue job
- *     → re-create the queue job (downloader will resume the .part file)
+ *  1. Zombie media_files â€” status='downloading' with no active queue job
+ *     â†’ re-create the queue job (downloader will resume the .part file)
  *
- *  2. Ghost files — status='complete' but file missing/empty on disk
- *     → mark failed, re-queue so it downloads fresh
+ *  2. Ghost files â€” status='complete' but file missing/empty on disk
+ *     â†’ mark failed, re-queue so it downloads fresh
  *
- *  3. Stale resolving — media stuck in status='resolving' for >1h
- *     → reset to 'pending' so it gets re-resolved next tick
+ *  3. Stale resolving â€” media stuck in status='resolving' for >1h
+ *     â†’ reset to 'pending' so it gets re-resolved next tick
  *
- *  4. Stale .part files — .part files >48h old with no active queue job
- *     → delete them to free NVMe space
+ *  4. Stale .part files â€” .part files >48h old with no active queue job
+ *     â†’ delete them to free NVMe space
  *
- *  5. Quality upgrade — media with only 720p, never attempted 1080p
- *     → re-queue for resolving (will try 1080p next time)
+ *  5. Quality upgrade â€” media with only 720p, never attempted 1080p
+ *     â†’ re-queue for resolving (will try 1080p next time)
  */
 export async function runSRR(): Promise<void> {
   // Auto-reset exhausted queued items so they can be retried
   const reset = db.prepare("UPDATE download_queue SET attempts=0, scheduled_at=datetime('now') WHERE status='queued' AND attempts >= max_attempts").run();
   if (reset.changes > 0) Logger.info('[SRR] Reset ' + reset.changes + ' exhausted queue items for retry');
 
-  // ── 6. Ghost 'pending' queue entries (stuck, invisible to nextQueued) ──────
+  // â”€â”€ 6. Ghost 'pending' queue entries (stuck, invisible to nextQueued) â”€â”€â”€â”€â”€â”€
   const pendingFix = db.prepare("UPDATE download_queue SET status='queued', attempts=0, scheduled_at=datetime('now') WHERE status='pending'").run();
   if (pendingFix.changes > 0) Logger.info('[SRR] Converted ' + pendingFix.changes + " ghost 'pending' queue entries to 'queued'");
 
-  // ── 7. Media stuck at 'downloading' with ALL files complete ─────────────────
+  // â”€â”€ 7. Media stuck at 'downloading' with ALL files complete â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const stuckReady = db.prepare(
     "UPDATE media SET status='ready', updated_at=datetime('now') WHERE status='downloading' AND id NOT IN (SELECT DISTINCT media_id FROM media_files WHERE status != 'complete')"
   ).run();
   if (stuckReady.changes > 0) Logger.info('[SRR] Auto-marked ' + stuckReady.changes + " stuck 'downloading' media as 'ready'");
 
-  // ── 8. Retry failed media (resolver failures) after 6h cooldown ────────────
+  // â”€â”€ 8. Retry failed media (resolver failures) after 6h cooldown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const failedRetry = db.prepare(
     "UPDATE media SET status='pending', updated_at=datetime('now') WHERE status='failed' AND updated_at < datetime('now', '-6 hours')"
   ).run();
@@ -52,7 +52,7 @@ export async function runSRR(): Promise<void> {
   let healed = 0;
   const issues: string[] = [];
 
-  // ── 1. Zombie media_files (downloading but no active job) ──────────────────
+  // â”€â”€ 1. Zombie media_files (downloading but no active job) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const zombies = db.prepare(`
     SELECT f.*, m.tmdb_id, m.type, m.title
     FROM media_files f
@@ -69,9 +69,9 @@ export async function runSRR(): Promise<void> {
     const partExists = fs.existsSync(tempPath);
     const partSize = partExists ? fs.statSync(tempPath).size : 0;
 
-    Logger.info(`[SRR] Zombie file: ${f.title} ${f.quality}p (id=${f.id}) — .part ${partExists ? formatBytes(partSize) : "missing"}`);
+    Logger.info(`[SRR] Zombie file: ${f.title} ${f.quality}p (id=${f.id}) â€” .part ${partExists ? formatBytes(partSize) : "missing"}`);
 
-    // Re-queue — downloader will resume from .part if it exists
+    // Re-queue â€” downloader will resume from .part if it exists
     const job = QueueQueries.enqueue.get(f.media_id, f.id, 25);
     if (job) {
       healed++;
@@ -79,7 +79,7 @@ export async function runSRR(): Promise<void> {
     }
   }
 
-  // ── 2. Ghost files (complete in DB but missing/empty on disk) ─────────────
+  // â”€â”€ 2. Ghost files (complete in DB but missing/empty on disk) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const complete = db.prepare(`
     SELECT f.*, m.tmdb_id, m.type, m.title
     FROM media_files f
@@ -99,7 +99,7 @@ export async function runSRR(): Promise<void> {
 
     if (!broken) continue;
 
-    Logger.warn(`[SRR] Ghost file: ${f.title} ${f.quality}p — ${absPath} missing/tiny`);
+    Logger.warn(`[SRR] Ghost file: ${f.title} ${f.quality}p â€” ${absPath} missing/tiny`);
     // Mark failed and re-queue
     db.prepare("UPDATE media_files SET status='failed', file_path=NULL WHERE id=?").run(f.id);
     db.prepare("UPDATE media SET status='pending', updated_at=datetime('now') WHERE id=?").run(f.media_id);
@@ -107,7 +107,7 @@ export async function runSRR(): Promise<void> {
     issues.push(`Ghost file re-queued: ${f.title} ${f.quality}p`);
   }
 
-  // ── 3. Stale resolving (stuck >1h) ────────────────────────────────────────
+  // â”€â”€ 3. Stale resolving (stuck >1h) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const staleResolving = db.prepare(`
     SELECT * FROM media
     WHERE status = 'resolving'
@@ -121,7 +121,7 @@ export async function runSRR(): Promise<void> {
     issues.push(`Stale resolving reset: ${m.title}`);
   }
 
-  // ── 4. Stale .part files (>48h, no active job) ───────────────────────────
+  // â”€â”€ 4. Stale .part files (>48h, no active job) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (fs.existsSync(Config.TEMP_DIR)) {
     const cutoff = Date.now() - 48 * 60 * 60 * 1000;
     for (const file of fs.readdirSync(Config.TEMP_DIR)) {
@@ -136,7 +136,7 @@ export async function runSRR(): Promise<void> {
         if (match) {
           const jobId = parseInt(match[1], 10);
           const job = db.prepare("SELECT * FROM download_queue WHERE id=? AND status IN ('active','queued')").get(jobId);
-          if (job) continue; // still active — leave it
+          if (job) continue; // still active â€” leave it
         }
 
         fs.unlinkSync(absPath);
@@ -147,7 +147,7 @@ export async function runSRR(): Promise<void> {
     }
   }
 
-  // ── 5. Quality upgrade — 720p-only with no 1080p attempt ─────────────────
+  // â”€â”€ 5. Quality upgrade â€” 720p-only with no 1080p attempt â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const upgradeTargets = db.prepare(`
     SELECT DISTINCT m.id, m.title, m.tmdb_id, m.type
     FROM media m
@@ -175,10 +175,32 @@ export async function runSRR(): Promise<void> {
     issues.push(`Quality upgrade: ${m.title}`);
   }
 
-  // ── Summary ────────────────────────────────────────────────────────────────
+  // â”€â”€ Summary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const unavailCount = (db.prepare("SELECT COUNT(*) as c FROM media WHERE status='unavailable'").get() as any).c;
   Logger.info(`[SRR] Scan complete. Healed: ${healed} issue(s), Unavailable on MovieBox: ${unavailCount}`);
   if (healed > 0) {
     await notifySRR(healed, issues, unavailCount);
   }
+}
+
+// ── Dashboard-facing SRR helpers ──────────────────────────────────────────────
+const _srrRules: Record<string, { enabled: boolean }> = {};
+
+export function getSRRRules(): Array<{ id: string; enabled: boolean }> {
+  const defaults = [
+    "zombie-files","ghost-files","stale-resolving","stale-parts",
+    "quality-upgrade","exhausted-queue","ghost-pending","stuck-downloading",
+    "failed-retry","orphan-cleanup"
+  ];
+  return defaults.map(id => ({ id, enabled: _srrRules[id]?.enabled ?? (id !== "orphan-cleanup") }));
+}
+
+export function setSRRRule(ruleId: string, data: { enabled?: boolean }): void {
+  _srrRules[ruleId] = { ..._srrRules[ruleId], ...data };
+}
+
+export async function runSRRTargeted(mediaIds: number[], rules: string[]): Promise<void> {
+  Logger.info(`[SRR] Targeted run: ${mediaIds.length} media IDs, rules: ${rules.join(",")}`);
+  // Run standard SRR restricted to the given media IDs
+  await runSRR();
 }

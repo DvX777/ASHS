@@ -1,0 +1,36 @@
+﻿.page { display: flex; flex-direction: column; gap: var(--sp-lg); }
+.statGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-md); }
+@media (max-width: 1100px) { .statGrid { grid-template-columns: repeat(2, 1fr); } }
+.twoCol { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-lg); align-items: start; }
+@media (max-width: 1000px) { .twoCol { grid-template-columns: 1fr; } }
+.leftCol, .rightCol { display: flex; flex-direction: column; gap: var(--sp-md); }
+.queueGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-sm); text-align: center; }
+.qStat { display: flex; flex-direction: column; gap: 2px; }
+.qStat span { font-family: var(--font-display); font-size: 28px; font-weight: 400; letter-spacing: -0.5px; }
+.qStat small { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.storageList { display: flex; flex-direction: column; gap: var(--sp-md); }
+.srrMini { display: flex; flex-direction: column; gap: var(--sp-xs); }
+.srrStatus { font-size: 13px; font-weight: 500; }
+.srrResult { font-size: 12px; color: var(--muted); }
+.issueList { display: flex; flex-direction: column; gap: var(--sp-xs); }
+.issue {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px var(--sp-sm);
+  border-radius: var(--radius-md);
+  background: rgba(255,255,255,0.03);
+}
+.issueActive { background: rgba(212,160,23,0.06); }
+.issueOk { background: rgba(93,184,114,0.04); }
+.issueMeta { display: flex; flex-direction: column; gap: 1px; }
+.issueName { font-size: 13px; color: var(--on-dark); }
+.issueCount { font-size: 11px; font-weight: 500; }
+.allGood { font-size: 13px; color: var(--success); }
+.sysList { display: flex; flex-direction: column; gap: var(--sp-xs); }
+.sysRow {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  font-size: 13px;
+}
+.sysRow span:first-child { color: var(--muted); }
+.sysRow span:last-child { color: var(--on-dark); }

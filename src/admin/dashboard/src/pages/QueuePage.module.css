@@ -1,0 +1,34 @@
+﻿.page { display: flex; flex-direction: column; gap: var(--sp-lg); }
+.actions { display: flex; gap: var(--sp-xs); }
+.tabs { display: flex; gap: 4px; }
+.tab {
+  display: flex; align-items: center; gap: var(--sp-xs);
+  padding: 6px 14px;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  font-size: 13px; font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.tab:hover { background: rgba(255,255,255,0.05); color: var(--on-dark); }
+.activeTab { background: var(--surface-dark-elevated) !important; color: var(--on-dark) !important; border: 1px solid #3a3835; }
+.tabBadge {
+  background: var(--primary); color: white;
+  font-size: 10px; font-weight: 600;
+  padding: 1px 6px; border-radius: var(--radius-pill);
+}
+.jobList { display: flex; flex-direction: column; gap: var(--sp-md); }
+.activeJob { display: flex; flex-direction: column; gap: var(--sp-xs); padding: var(--sp-md); background: rgba(255,255,255,0.03); border-radius: var(--radius-md); }
+.jobHeader { display: flex; align-items: center; gap: var(--sp-sm); }
+.jobTitle { flex: 1; font-size: 13px; color: var(--on-dark); font-weight: 500; }
+.jobQual { font-size: 12px; color: var(--muted); }
+.jobMeta { display: flex; gap: var(--sp-md); font-size: 11px; color: var(--muted); font-family: var(--font-mono); }
+.table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.table th { text-align: left; padding: 8px var(--sp-sm); color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #2a2825; }
+.table td { padding: 10px var(--sp-sm); border-bottom: 1px solid rgba(255,255,255,0.04); vertical-align: middle; }
+.titleCell { color: var(--on-dark); font-weight: 500; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.errorCell { color: var(--error); font-family: var(--font-mono); font-size: 11px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rowActions { display: flex; gap: 4px; }
+.empty { text-align: center; color: var(--muted); padding: var(--sp-xxl); font-size: 13px; }

@@ -1,28 +1,41 @@
-﻿// src/api/app.ts
+// src/api/app.ts
 import { Elysia } from "elysia";
 import cors from "@elysiajs/cors";
 import { execSync } from "child_process";
+import path from "path";
+import fs from "fs";
 import { Config } from "../config";
 import { db, QueueQueries } from "../db";
 import { logAccess } from "../api/middleware/accessLog";
 import { getMediaStats, getTempStats, formatDiskStats } from "../storage/stats";
 import { libraryRoutes } from "./routes/library";
-import { adminRoutes } from "./routes/admin";
+import { adminRoutes, dashboardApiRoutes } from "./routes/admin";
 import { createFileApp } from "../fileserver/app";
 
 function getTunnelStatus(): "connected" | "disconnected" | "unknown" {
   try {
     const out = execSync("systemctl is-active cloudflared 2>/dev/null", { encoding: "utf-8", timeout: 2000 }).trim();
     return out === "active" ? "connected" : "disconnected";
-  } catch {
-    return "unknown";
+  } catch { return "unknown"; }
+}
+
+// Serve static admin dashboard files
+function serveAdmin(filePath: string): Response {
+  const distDir = path.join(import.meta.dir, "../admin/dashboard/dist");
+  const abs = path.join(distDir, filePath);
+  if (fs.existsSync(abs) && fs.statSync(abs).isFile()) {
+    return new Response(Bun.file(abs));
   }
+  // SPA fallback
+  return new Response(Bun.file(path.join(distDir, "index.html")));
 }
 
 export function createApiApp() {
   return new Elysia()
     .use(cors({ origin: Config.CORS_ORIGINS.includes("*") ? true : Config.CORS_ORIGINS }))
     .onAfterHandle(({ request, set }: any) => { logAccess(request, set); })
+
+    // Public health endpoint
     .get("/health", () => {
       const media  = getMediaStats();
       const temp   = getTempStats();
@@ -47,9 +60,22 @@ export function createApiApp() {
         memory: process.memoryUsage(),
       };
     })
+
+    // Library + admin API routes
     .use(libraryRoutes)
     .use(adminRoutes)
-    .use(createFileApp())   // Mount /v1/stream/* on port 4000 so CF Tunnel exposes it
+
+    // Dashboard REST API routes (/0x/api/*)
+    .use(dashboardApiRoutes)
+
+    // Admin dashboard static files at /0x/*
+    .get("/0x", () => serveAdmin("index.html"))
+    .get("/0x/", () => serveAdmin("index.html"))
+    .get("/0x/assets/*", ({ params }: any) => serveAdmin("assets/" + params["*"]))
+    .get("/0x/*", () => serveAdmin("index.html"))
+
+    // File streaming
+    .use(createFileApp())
+
     .all("*", ({ set }: any) => { set.status = 404; return { error: "Not found" }; });
 }
-

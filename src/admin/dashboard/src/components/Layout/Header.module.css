@@ -1,0 +1,45 @@
+﻿.header {
+  height: var(--header-h);
+  background: var(--surface-dark-soft);
+  border-bottom: 1px solid #2a2825;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--sp-xl);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+
+.title {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 400;
+  color: var(--on-dark);
+  letter-spacing: -0.3px;
+}
+
+.indicators {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-xs);
+}
+
+.pill {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(255,255,255,0.06);
+  color: var(--on-dark-soft);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+.dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}

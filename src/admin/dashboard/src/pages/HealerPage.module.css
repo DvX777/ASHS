@@ -1,0 +1,22 @@
+﻿.page { display: flex; flex-direction: column; gap: var(--sp-lg); }
+.actions { display: flex; gap: var(--sp-xs); }
+.tabs { display: flex; gap: 4px; }
+.tab { background: transparent; border: none; color: var(--muted); font-size: 13px; font-weight: 500; padding: 6px 14px; border-radius: var(--radius-md); cursor: pointer; transition: all var(--transition); }
+.tab:hover { color: var(--on-dark); background: rgba(255,255,255,0.05); }
+.activeTab { background: var(--surface-dark-elevated) !important; color: var(--on-dark) !important; border: 1px solid #3a3835; }
+.issueGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--sp-md); }
+.issueCard { transition: border-color var(--transition); }
+.warning { border-color: rgba(212,160,23,0.3) !important; }
+.error { border-color: rgba(198,69,69,0.3) !important; }
+.failed { border-color: rgba(198,69,69,0.3) !important; }
+.ok { border-color: rgba(93,184,114,0.2) !important; opacity: 0.7; }
+.issueTop { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--sp-md); margin-bottom: var(--sp-sm); }
+.issueName { font-size: 14px; font-weight: 500; color: var(--on-dark); margin-bottom: 2px; }
+.issueDesc { font-size: 12px; color: var(--muted); line-height: 1.4; }
+.issueCount { font-family: var(--font-display); font-size: 32px; font-weight: 400; line-height: 1; flex-shrink: 0; }
+.issueAction { display: flex; justify-content: space-between; align-items: center; padding-top: var(--sp-sm); border-top: 1px solid rgba(255,255,255,0.06); }
+.fixPreview { font-size: 11px; color: var(--muted); }
+.scanning, .empty { text-align: center; color: var(--muted); padding: var(--sp-xxl); font-size: 13px; }
+.table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.table th { text-align: left; padding: 8px var(--sp-sm); color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #2a2825; }
+.table td { padding: 10px var(--sp-sm); border-bottom: 1px solid rgba(255,255,255,0.04); vertical-align: middle; }

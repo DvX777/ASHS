@@ -1,0 +1,10 @@
+﻿.page { display: flex; flex-direction: column; gap: var(--sp-xl); }
+.section { display: flex; flex-direction: column; gap: var(--sp-md); }
+.sectionTitle { font-family: var(--font-display); font-size: 20px; font-weight: 400; color: var(--on-dark); }
+.actionGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--sp-md); }
+.actionCard { display: flex; flex-direction: column; gap: var(--sp-sm); }
+.actionLabel { font-size: 14px; font-weight: 500; color: var(--on-dark); }
+.actionDesc { font-size: 12px; color: var(--muted); line-height: 1.4; flex: 1; }
+.dangerCard { border-color: rgba(198,69,69,0.3) !important; background: rgba(198,69,69,0.04) !important; display: flex; flex-direction: column; gap: var(--sp-md); }
+.dangerRow { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-md); padding-bottom: var(--sp-md); border-bottom: 1px solid rgba(198,69,69,0.15); }
+.dangerRow:last-child { border-bottom: none; padding-bottom: 0; }

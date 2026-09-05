@@ -1,0 +1,51 @@
+﻿.page { display: flex; flex-direction: column; gap: var(--sp-lg); }
+.viewToggle { display: flex; gap: 2px; background: var(--surface-dark-elevated); border: 1px solid #3a3835; border-radius: var(--radius-md); padding: 3px; }
+.viewToggle button { background: none; border: none; color: var(--muted); font-size: 12px; font-weight: 500; padding: 4px 10px; border-radius: var(--radius-sm); cursor: pointer; transition: all var(--transition); }
+.activeView { background: var(--primary) !important; color: white !important; }
+.filters { display: flex; gap: var(--sp-sm); flex-wrap: wrap; }
+.search {
+  flex: 1; min-width: 200px;
+  background: var(--surface-dark-elevated); border: 1px solid #3a3835; border-radius: var(--radius-md);
+  padding: 8px var(--sp-md); color: var(--on-dark); font-size: 13px; outline: none;
+}
+.search:focus { border-color: var(--primary); }
+.select {
+  background: var(--surface-dark-elevated); border: 1px solid #3a3835; border-radius: var(--radius-md);
+  padding: 8px var(--sp-md); color: var(--on-dark); font-size: 13px; outline: none; cursor: pointer;
+}
+.bulkBar {
+  display: flex; align-items: center; gap: var(--sp-sm);
+  background: rgba(204,120,92,0.1); border: 1px solid rgba(204,120,92,0.3);
+  border-radius: var(--radius-md); padding: 8px var(--sp-md);
+  font-size: 13px; color: var(--primary);
+}
+.table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.table th { text-align: left; padding: 8px var(--sp-sm); color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #2a2825; }
+.row { cursor: pointer; transition: background var(--transition); }
+.row:hover td { background: rgba(255,255,255,0.03); }
+.row td { padding: 10px var(--sp-sm); border-bottom: 1px solid rgba(255,255,255,0.04); vertical-align: middle; }
+.titleCell { display: flex; align-items: center; gap: var(--sp-sm); color: var(--on-dark); font-weight: 500; max-width: 250px; }
+.thumb { width: 28px; height: 40px; border-radius: 3px; object-fit: cover; flex-shrink: 0; }
+.qualCell { font-family: var(--font-mono); font-size: 11px; color: var(--accent-teal); }
+.rowActions { display: flex; gap: 4px; }
+.empty { text-align: center; color: var(--muted); padding: var(--sp-xxl); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: var(--sp-md); }
+.gridCard { cursor: pointer; border-radius: var(--radius-md); overflow: hidden; background: var(--surface-dark-elevated); border: 1px solid #2a2825; transition: transform var(--transition); }
+.gridCard:hover { transform: translateY(-2px); }
+.posterWrap { position: relative; aspect-ratio: 2/3; }
+.poster { width: 100%; height: 100%; object-fit: cover; }
+.noPoster { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: var(--surface-dark); font-size: 36px; color: var(--muted); }
+.posterOverlay { position: absolute; top: 6px; left: 6px; }
+.gridInfo { padding: 8px; }
+.gridTitle { font-size: 12px; font-weight: 500; color: var(--on-dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gridYear { font-size: 11px; color: var(--muted); }
+.pagination { display: flex; align-items: center; justify-content: center; gap: var(--sp-md); font-size: 13px; color: var(--muted); }
+/* Detail modal */
+.detail { display: flex; flex-direction: column; gap: var(--sp-md); }
+.detailMeta { display: flex; align-items: center; gap: var(--sp-xs); flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+.overview { font-size: 13px; color: var(--on-dark-soft); line-height: 1.6; }
+.filesTitle { font-size: 14px; font-weight: 500; color: var(--on-dark); }
+.filesList { display: flex; flex-direction: column; gap: 6px; }
+.fileRow { display: flex; align-items: center; gap: var(--sp-sm); font-size: 12px; padding: 6px; background: rgba(255,255,255,0.03); border-radius: var(--radius-sm); }
+.fileQual { font-family: var(--font-mono); color: var(--accent-teal); flex: 1; }
+.detailActions { display: flex; gap: var(--sp-sm); padding-top: var(--sp-sm); border-top: 1px solid #2a2825; }
