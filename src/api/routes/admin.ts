@@ -271,13 +271,15 @@ export const dashboardApiRoutes = new Elysia({ prefix: "/0x/api" })
 
   .get("/healer/scan", ({ request, set }: any) => {
     if (!dashAuth(request)) { set.status = 401; return { error: "Unauthorized" }; }
+    const q = (sql: string) => (db.prepare(sql).get() as any).c as number;
     return { issues: [
-      { type: "stuck-downloading",  label: "Stuck Downloading",   description: "Media 'downloading' with all files complete",              fix_preview: "Mark as ready",         count: (db.prepare("SELECT COUNT(*) as c FROM media m WHERE m.status='downloading' AND NOT EXISTS (SELECT 1 FROM media_files f WHERE f.media_id=m.id AND f.status!='complete')").get() as any).c },
-      { type: "exhausted-queue",    label: "Exhausted Queue",     description: "Queue items at max_attempts Ã¢â‚¬â€ stuck forever",             fix_preview: "Reset attempts to 0",    count: (db.prepare("SELECT COUNT(*) as c FROM download_queue WHERE status='queued' AND attempts>=max_attempts").get() as any).c },
-      { type: "ghost-pending-queue",label: "Ghost Pending Queue", description: "Queue entries stuck as 'pending' (invisible to scheduler)", fix_preview: "Convert to queued",     count: (db.prepare("SELECT COUNT(*) as c FROM download_queue WHERE status='pending'").get() as any).c },
-      { type: "stale-resolving",    label: "Stale Resolving",     description: "Media stuck 'resolving' for over 1 hour",                 fix_preview: "Reset to pending",       count: (db.prepare("SELECT COUNT(*) as c FROM media WHERE status='resolving' AND updated_at < datetime('now','-1 hour')").get() as any).c },
-      { type: "failed-media",       label: "Failed Media",        description: "Media in 'failed' state ready for retry",                 fix_preview: "Reset to pending",       count: (db.prepare("SELECT COUNT(*) as c FROM media WHERE status='failed'").get() as any).c },
-      { type: "orphan-temp",        label: "Orphan Temp Files",   description: ".part temp files with no active download job",            fix_preview: "Delete from NVMe",       count: (() => { try { return fs.readdirSync(Config.TEMP_DIR).filter(f=>f.endsWith(".part")).length; } catch { return 0; } })() },
+      { type: "complete-not-ready",  label: "Complete Files Not Ready", description: "Media with complete files on disk but wrong status (SAFE restore)", fix_preview: "Mark ready",       count: q("SELECT COUNT(*) as c FROM media WHERE status NOT IN ('ready','removed') AND EXISTS (SELECT 1 FROM media_files WHERE media_id=media.id AND status='complete')")  },
+      { type: "stuck-downloading",   label: "Stuck Downloading",        description: "Downloading but no active queue job for 30+ min",                  fix_preview: "Mark ready",       count: q("SELECT COUNT(*) as c FROM media WHERE status='downloading' AND NOT EXISTS (SELECT 1 FROM download_queue WHERE media_id=media.id AND status='active') AND updated_at < datetime('now','-30 minutes')")  },
+      { type: "exhausted-queue",     label: "Exhausted Queue",          description: "Queue items that hit max_attempts and are stuck",                  fix_preview: "Reset attempts",   count: q("SELECT COUNT(*) as c FROM download_queue WHERE status='queued' AND attempts>=max_attempts")  },
+      { type: "ghost-pending-queue", label: "Ghost Pending Queue",      description: "Queue entries stuck as pending (invisible to scheduler)",           fix_preview: "Convert to queued",count: q("SELECT COUNT(*) as c FROM download_queue WHERE status='pending'")  },
+      { type: "stale-resolving",     label: "Stale Resolving",          description: "Media stuck resolving for over 1 hour",                            fix_preview: "Reset to pending", count: q("SELECT COUNT(*) as c FROM media WHERE status='resolving' AND updated_at < datetime('now','-1 hour')")  },
+      { type: "failed-media",        label: "Failed (No Complete Files)",description: "Failed with zero complete files on disk - safe to retry",         fix_preview: "Reset to pending", count: q("SELECT COUNT(*) as c FROM media WHERE status='failed' AND NOT EXISTS (SELECT 1 FROM media_files WHERE media_id=media.id AND status='complete')")  },
+      { type: "orphan-temp",         label: "Orphan Temp Files",        description: ".part temp files with no active download job",                     fix_preview: "Delete from NVMe", count: (() => { try { return fs.readdirSync(Config.TEMP_DIR).filter((f: string) => f.endsWith(".part")).length; } catch { return 0; } })()  },
     ]};
   })
 
@@ -286,16 +288,17 @@ export const dashboardApiRoutes = new Elysia({ prefix: "/0x/api" })
     const { type } = body ?? {};
     let fixed = 0;
     const fix = (t: string) => {
-      if (t === "stuck-downloading")   fixed += db.prepare("UPDATE media SET status='ready', updated_at=datetime('now') WHERE status='downloading' AND id NOT IN (SELECT DISTINCT media_id FROM media_files WHERE status!='complete')").run().changes;
+      if (t === "complete-not-ready")  fixed += db.prepare("UPDATE media SET status='ready', updated_at=datetime('now') WHERE status NOT IN ('ready','removed') AND id IN (SELECT DISTINCT media_id FROM media_files WHERE status='complete')").run().changes;
+      if (t === "stuck-downloading")   fixed += db.prepare("UPDATE media SET status='ready', updated_at=datetime('now') WHERE status='downloading' AND NOT EXISTS (SELECT 1 FROM download_queue WHERE media_id=media.id AND status='active') AND updated_at < datetime('now','-30 minutes') AND EXISTS (SELECT 1 FROM media_files WHERE media_id=media.id AND status='complete')").run().changes;
       if (t === "exhausted-queue")     fixed += db.prepare("UPDATE download_queue SET attempts=0, scheduled_at=datetime('now') WHERE status='queued' AND attempts>=max_attempts").run().changes;
       if (t === "ghost-pending-queue") fixed += db.prepare("UPDATE download_queue SET status='queued', scheduled_at=datetime('now') WHERE status='pending'").run().changes;
       if (t === "stale-resolving")     fixed += db.prepare("UPDATE media SET status='pending', updated_at=datetime('now') WHERE status='resolving' AND updated_at < datetime('now','-1 hour')").run().changes;
-      if (t === "failed-media")        fixed += db.prepare("UPDATE media SET status='pending', updated_at=datetime('now') WHERE status='failed'").run().changes;
-      if (t === "orphan-temp") { try { for (const p of fs.readdirSync(Config.TEMP_DIR).filter(f=>f.endsWith(".part"))) { try { fs.unlinkSync(path.join(Config.TEMP_DIR,p)); fixed++; } catch {} } } catch {} }
+      if (t === "failed-media")        fixed += db.prepare("UPDATE media SET status='pending', updated_at=datetime('now') WHERE status='failed' AND NOT EXISTS (SELECT 1 FROM media_files WHERE media_id=media.id AND status='complete')").run().changes;
+      if (t === "orphan-temp") { try { for (const p of fs.readdirSync(Config.TEMP_DIR).filter((f: string) => f.endsWith(".part"))) { try { fs.unlinkSync(path.join(Config.TEMP_DIR,p)); fixed++; } catch {} } } catch {} }
     };
-    if (type === "all") ["stuck-downloading","exhausted-queue","ghost-pending-queue","stale-resolving","failed-media","orphan-temp"].forEach(fix);
-    else fix(type);
-    Logger.info(`[Healer] Fixed ${fixed} (type: ${type})`);
+    const ALL = ["complete-not-ready","stuck-downloading","exhausted-queue","ghost-pending-queue","stale-resolving","failed-media","orphan-temp"];
+    if (type === "all") ALL.forEach(fix); else fix(type);
+    Logger.info("[Healer] Fixed " + fixed + " (type: " + type + ")");
     return { ok: true, fixed };
   })
 

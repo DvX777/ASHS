@@ -49,3 +49,12 @@
 .fileRow { display: flex; align-items: center; gap: var(--sp-sm); font-size: 12px; padding: 6px; background: rgba(255,255,255,0.03); border-radius: var(--radius-sm); }
 .fileQual { font-family: var(--font-mono); color: var(--accent-teal); flex: 1; }
 .detailActions { display: flex; gap: var(--sp-sm); padding-top: var(--sp-sm); border-top: 1px solid #2a2825; }
+.errorBanner {
+  background: rgba(198,69,69,0.12);
+  border: 1px solid rgba(198,69,69,0.3);
+  border-radius: var(--radius-md);
+  padding: 10px var(--sp-md);
+  color: var(--error);
+  font-size: 13px;
+}
+.muted { color: var(--muted); font-size: 12px; }
