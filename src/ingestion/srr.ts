@@ -32,6 +32,16 @@ export async function runSRR(): Promise<void> {
   const reset = db.prepare("UPDATE download_queue SET attempts=0, scheduled_at=datetime('now') WHERE status='queued' AND attempts >= max_attempts").run();
   if (reset.changes > 0) Logger.info('[SRR] Reset ' + reset.changes + ' exhausted queue items for retry');
 
+  // ── 6. Ghost 'pending' queue entries (stuck, invisible to nextQueued) ──────
+  const pendingFix = db.prepare("UPDATE download_queue SET status='queued', attempts=0, scheduled_at=datetime('now') WHERE status='pending'").run();
+  if (pendingFix.changes > 0) Logger.info('[SRR] Converted ' + pendingFix.changes + " ghost 'pending' queue entries to 'queued'");
+
+  // ── 7. Media stuck at 'downloading' with ALL files complete ─────────────────
+  const stuckReady = db.prepare(
+    "UPDATE media SET status='ready', updated_at=datetime('now') WHERE status='downloading' AND id NOT IN (SELECT DISTINCT media_id FROM media_files WHERE status != 'complete')"
+  ).run();
+  if (stuckReady.changes > 0) Logger.info('[SRR] Auto-marked ' + stuckReady.changes + " stuck 'downloading' media as 'ready'");
+
   Logger.info("[SRR] Starting Smart Re-Resolve scan...");
   let healed = 0;
   const issues: string[] = [];
