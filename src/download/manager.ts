@@ -13,6 +13,9 @@ import { isDiskCritical } from "../storage/stats";
 import { runCleanupIfNeeded } from "../storage/cleanup";
 import { formatBytes, sleep } from "../utils/helpers";
 
+// Tracks seasons already notified this session to prevent duplicate alerts
+const _notifiedSeasons = new Set<string>();
+
 export async function startDownloadManager(): Promise<void> {
   Logger.info("[DownloadManager] Starting...");
   // Ensure directories exist
@@ -135,7 +138,7 @@ async function resolveAndEnqueue(media: any): Promise<void> {
           for (const q of [1080, 720]) {
             const relP = buildRelativePath("tv", media.tmdb_id, q, sNum, eNum);
             if (fs.existsSync(path.join(Config.MEDIA_DIR, relP))) continue;
-            const fileRow = FileQueries.insertFile.get(media.id, sNum, eNum, q, tvItems[0]?.dub ?? "Original", "mp4", null);
+            const fileRow = FileQueries.insertFile.get(media.id, sNum, eNum, q, showInfo?.dubName ?? "Original", "mp4", null);
             if (!fileRow) continue;
             const job = QueueQueries.enqueue.get(media.id, fileRow.id, 30);
             // Store detailPath in source_headers so executeDownload can use it

@@ -28,6 +28,10 @@ import { formatBytes } from "../utils/helpers";
  *     → re-queue for resolving (will try 1080p next time)
  */
 export async function runSRR(): Promise<void> {
+  // Auto-reset exhausted queued items so they can be retried
+  const reset = db.prepare("UPDATE download_queue SET attempts=0, scheduled_at=datetime('now') WHERE status='queued' AND attempts >= max_attempts").run();
+  if (reset.changes > 0) Logger.info('[SRR] Reset ' + reset.changes + ' exhausted queue items for retry');
+
   Logger.info("[SRR] Starting Smart Re-Resolve scan...");
   let healed = 0;
   const issues: string[] = [];
