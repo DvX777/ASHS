@@ -66,7 +66,7 @@ export const QueueQueries = {
   markActive:  db.query<null, [number]>("UPDATE download_queue SET status='active', started_at=datetime('now'), attempts=attempts+1 WHERE id=?"),
   markDone:    db.query<null, [number]>("UPDATE download_queue SET status='done', completed_at=datetime('now') WHERE id=?"),
   markFailed:  db.query<null, [string, number]>("UPDATE download_queue SET status='failed', error=? WHERE id=?"),
-  requeueFailed: db.query<null, [number]>("UPDATE download_queue SET status='queued', scheduled_at=datetime('now', '+5 minutes') WHERE id=? AND attempts < max_attempts"),
+  requeueFailed: db.query<null, [number]>("UPDATE download_queue SET status='queued', scheduled_at=datetime('now', '+5 minutes'), max_attempts=MAX(max_attempts, attempts+1) WHERE id=?"),
   list:        db.query<DownloadJob, [number, number]>("SELECT * FROM download_queue ORDER BY priority ASC, scheduled_at ASC LIMIT ? OFFSET ?"),
   cancel:      db.query<null, [number]>("UPDATE download_queue SET status='cancelled' WHERE id=? AND status='queued'"),
   stats:       db.query<{ status: string; count: number }, []>("SELECT status, COUNT(*) as count FROM download_queue GROUP BY status"),

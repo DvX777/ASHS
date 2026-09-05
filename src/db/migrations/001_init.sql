@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS download_queue (
   source_url      TEXT,             -- MovieBox CDN URL (expires in ~2h)
   source_headers  TEXT,             -- JSON: { origin, referer, user-agent }
   attempts        INTEGER NOT NULL DEFAULT 0,
-  max_attempts    INTEGER NOT NULL DEFAULT 3,
+  max_attempts    INTEGER NOT NULL DEFAULT 10,
   scheduled_at    TEXT NOT NULL DEFAULT (datetime('now')),
   started_at      TEXT,
   completed_at    TEXT,
