@@ -42,6 +42,12 @@ export async function runSRR(): Promise<void> {
   ).run();
   if (stuckReady.changes > 0) Logger.info('[SRR] Auto-marked ' + stuckReady.changes + " stuck 'downloading' media as 'ready'");
 
+  // ── 8. Retry failed media (resolver failures) after 6h cooldown ────────────
+  const failedRetry = db.prepare(
+    "UPDATE media SET status='pending', updated_at=datetime('now') WHERE status='failed' AND updated_at < datetime('now', '-6 hours')"
+  ).run();
+  if (failedRetry.changes > 0) Logger.info('[SRR] Retrying ' + failedRetry.changes + ' previously failed media items');
+
   Logger.info("[SRR] Starting Smart Re-Resolve scan...");
   let healed = 0;
   const issues: string[] = [];
