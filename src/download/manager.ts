@@ -5,6 +5,7 @@ import { Config } from "../config";
 import { Logger } from "../utils/logger";
 import { Discord, notifyMovieDone, notifySeasonDone, notifyMilestone } from "../utils/discord";
 import { db, MediaQueries, FileQueries, QueueQueries } from "../db";
+import { RadarrClient } from "../integrations/radarr";
 import { resolveMovie, resolveTV, resolveTVEpisode, resolveTVShow, TV_STREAM_HEADERS } from "../ingestion/resolver";
 import { downloadFile } from "./downloader";
 import { computeSHA256, verifySizeApprox, moveFile } from "./verifier";

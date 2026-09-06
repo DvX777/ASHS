@@ -9,6 +9,7 @@ import { LibraryPage }  from "./pages/LibraryPage";
 import { QueuePage }    from "./pages/QueuePage";
 import { HealerPage }   from "./pages/HealerPage";
 import { SRRPage }      from "./pages/SRRPage";
+import { RadarrPage }   from "./pages/RadarrPage";
 import { UploadPage }   from "./pages/UploadPage";
 import { SitesPage }    from "./pages/SitesPage";
 import { LogsPage }     from "./pages/LogsPage";
@@ -39,6 +40,7 @@ export default function App() {
             <Route path="/queue"    element={<QueuePage />} />
             <Route path="/healer"   element={<HealerPage />} />
             <Route path="/srr"      element={<SRRPage />} />
+            <Route path="/radarr"   element={<RadarrPage />} />
             <Route path="/upload"   element={<UploadPage />} />
             <Route path="/sites"    element={<SitesPage />} />
             <Route path="/logs"     element={<LogsPage />} />

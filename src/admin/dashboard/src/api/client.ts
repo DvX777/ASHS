@@ -42,6 +42,13 @@ export const api = {
   logout:    () =>            req<{ ok: boolean }>("POST", "/auth/logout"),
   checkAuth: () =>            req<{ ok: boolean }>("GET",  "/auth/check", undefined, { silent401: true }),
 
+  // Radarr & qBittorrent
+  radarrStatus:   () => req<any>("GET", "/radarr/status"),
+  radarrQueue:    () => req<any>("GET", "/radarr/queue"),
+  radarrSearch:   (movieId: number) => req<any>("GET", `/radarr/search?movieId=${movieId}`),
+  radarrGrab:     (guid: string, indexerId: number) => req<any>("POST", "/radarr/grab", { guid, indexerId }),
+  radarrProfiles: () => req<any>("GET", "/radarr/profiles"),
+
   // System
   health:       () => req<any>("GET",  "/system/stats"),
   logs:         (type: "out" | "error", lines = 100) => req<{ lines: string[] }>("GET", `/system/logs?type=${type}&lines=${lines}`),
