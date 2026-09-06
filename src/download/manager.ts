@@ -257,7 +257,7 @@ async function executeDownload(job: any): Promise<void> {
     // Check if all files for this media are done
     // Use readyCheck: ready if >=1 file complete AND no more active/queued jobs
     // Fixes: SRR quality upgrade fails -> 480p done + 1080p failed -> should be ready
-    const { should_be_ready } = FileQueries.readyCheck.get(job.media_id, job.media_id) as { should_be_ready: number };
+    const { should_be_ready } = FileQueries.readyCheck.get(job.media_id) as { should_be_ready: number };
     if (should_be_ready) {
       MediaQueries.setStatus.run('ready', job.tmdb_id, job.type);
     }
@@ -326,7 +326,7 @@ async function executeDownload(job: any): Promise<void> {
     // CRITICAL: After job fails, check if media should now be 'ready'
     // (e.g. SRR queued 1080p upgrade, it failed, but 480p is already complete)
     try {
-      const { should_be_ready: canMarkReady } = FileQueries.readyCheck.get(job.media_id, job.media_id) as { should_be_ready: number };
+      const { should_be_ready: canMarkReady } = FileQueries.readyCheck.get(job.media_id) as { should_be_ready: number };
       if (canMarkReady) {
         MediaQueries.setStatus.run('ready', job.tmdb_id, job.type);
         Logger.info('[Download] Partial success -> marked ready: ' + job.title);

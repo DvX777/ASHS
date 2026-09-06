@@ -43,17 +43,16 @@ export async function startScheduler(): Promise<void> {
   // This is the permanent fix for 'Complete Files Not Ready' - no manual button needed
   setInterval(() => {
     try {
-      const fixed = db.prepare(
+      const fixed = db.prepare(`
         UPDATE media SET status='ready', updated_at=datetime('now')
-         WHERE status NOT IN ('ready','removed')
-         AND id IN (SELECT DISTINCT media_id FROM media_files WHERE status='complete')
-         AND NOT EXISTS (SELECT 1 FROM download_queue WHERE media_id=media.id AND status IN ('active','queued','pending'))`
-      ).run().changes;
-      if (fixed > 0) Logger.info([AutoHeal] Restored  media to ready);
+        WHERE status NOT IN ('ready','removed')
+          AND id IN (SELECT DISTINCT media_id FROM media_files WHERE status='complete')
+      `).run().changes;
+      if (fixed > 0) Logger.info(`[AutoHeal] Restored ${fixed} media to ready`);
     } catch (e) {
       Logger.warn('[AutoHeal] Error: ' + (e as Error).message);
     }
-  }, 60_000); // every 60 seconds
+  }, 60_000);
   scheduleStaleRefresh();
 
   // Poll for manual trigger file

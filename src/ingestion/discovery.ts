@@ -2,6 +2,7 @@
 import { Config } from "../config";
 import { Logger } from "../utils/logger";
 import { db, MediaQueries } from "../db";
+import { RadarrClient } from "../integrations/radarr";
 import { isEligible, isAlreadyReady, TmdbItem } from "./filter";
 
 const TMDB  = Config.TMDB_BASE;
@@ -98,6 +99,9 @@ export async function discoverContent(): Promise<{ added: number; skipped: numbe
       if (isAlreadyReady(String(item.id), src.type)) { skipped++; continue; }
 
       upsertMedia(item, src.type);
+      if (src.type === "movie" && Config.RADARR_ENABLED && Config.RADARR_API_KEY) {
+        RadarrClient.addMovie(item.id, item.title ?? item.name ?? "").catch(() => {});
+      }
       added++;
     }
   }

@@ -55,12 +55,8 @@ export const FileQueries = {
   updateProgress:   db.query<null, [number, number]>("UPDATE media_files SET progress = ? WHERE id = ?"),
   // readyCheck: ready when >= 1 file complete AND no jobs still active/queued/pending
   // Fixes: SRR quality upgrade fails -> 480p done + 1080p failed -> stays stuck as downloading
-  readyCheck: db.query<{ should_be_ready: number }, [number, number]>(`
-    SELECT (
-      (SELECT COUNT(*) FROM media_files WHERE media_id=? AND status='complete') > 0
-      AND
-      (SELECT COUNT(*) FROM download_queue WHERE media_id=? AND status IN ('active','queued','pending')) = 0
-    ) as should_be_ready
+  readyCheck: db.query<{ should_be_ready: number }, [number]>(`
+    SELECT ((SELECT COUNT(*) FROM media_files WHERE media_id=? AND status='complete') > 0) as should_be_ready
   `),
   allComplete:      db.query<{ all_done: number }, [number]>("SELECT (COUNT(*) = SUM(CASE WHEN status = 'complete' THEN 1 ELSE 0 END)) as all_done FROM media_files WHERE media_id = ?"),
   findByChecksum:   db.query<MediaFile, [string]>("SELECT * FROM media_files WHERE checksum_sha256 = ? AND status = 'complete' LIMIT 1"),

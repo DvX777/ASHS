@@ -20,7 +20,7 @@ export const Config = {
 
   // Storage
   DB_PATH: env("DB_PATH", "./ashs.sqlite3"),
-  TEMP_DIR: env("TEMP_DIR", "./temp"),
+  TEMP_DIR: env("TEMP_DIR", "/opt/ashs/media/.downloads"),
   MEDIA_DIR: env("MEDIA_DIR", "./media"),
 
   // TMDB
@@ -38,8 +38,15 @@ export const Config = {
   // Discord
   DISCORD_WEBHOOK_URL: env("DISCORD_WEBHOOK_URL"),
 
+  // Radarr & qBittorrent
+  RADARR_ENABLED: env("RADARR_ENABLED", "true") === "true",
+  RADARR_URL: env("RADARR_URL", "http://127.0.0.1:7878"),
+  RADARR_API_KEY: env("RADARR_API_KEY", ""),
+  RADARR_ROOT_FOLDER: env("RADARR_ROOT_FOLDER", "/opt/ashs/media/movies"),
+  QBITTORRENT_URL: env("QBITTORRENT_URL", "http://127.0.0.1:8080"),
+
   // Ingestion
-  MAX_CONCURRENT_DOWNLOADS: envInt("MAX_CONCURRENT_DOWNLOADS", 3),
+  MAX_CONCURRENT_DOWNLOADS: envInt("MAX_CONCURRENT_DOWNLOADS", 20),
   DISK_CLEANUP_THRESHOLD: envFloat("DISK_CLEANUP_THRESHOLD", 0.85),
 
   // CORS

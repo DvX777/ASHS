@@ -10,6 +10,7 @@ import { logAccess } from "../api/middleware/accessLog";
 import { getMediaStats, getTempStats, formatDiskStats } from "../storage/stats";
 import { libraryRoutes } from "./routes/library";
 import { adminRoutes, dashboardApiRoutes } from "./routes/admin";
+import { radarrRoutes } from "./routes/radarr";
 import { createFileApp } from "../fileserver/app";
 
 function getTunnelStatus(): "connected" | "disconnected" | "unknown" {
@@ -67,6 +68,7 @@ export function createApiApp() {
 
     // Dashboard REST API routes (/0x/api/*)
     .use(dashboardApiRoutes)
+    .use(radarrRoutes)
 
     // Admin dashboard static files at /0x/*
     .get("/0x", () => serveAdmin("index.html"))
