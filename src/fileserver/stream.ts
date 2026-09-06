@@ -1,11 +1,16 @@
-﻿// src/fileserver/stream.ts — Byte-range aware file streaming
+// src/fileserver/stream.ts - Byte-range aware file streaming
 import fs from "fs";
 import path from "path";
 import { Config } from "../config";
 
 function getMimeType(filePath: string): string {
-  if (filePath.endsWith(".m3u8")) return "application/vnd.apple.mpegurl";
-  if (filePath.endsWith(".ts"))   return "video/MP2T";
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === ".m3u8") return "application/vnd.apple.mpegurl";
+  if (ext === ".ts")   return "video/MP2T";
+  if (ext === ".mkv")  return "video/x-matroska";
+  if (ext === ".webm") return "video/webm";
+  if (ext === ".avi")  return "video/x-msvideo";
+  if (ext === ".mov")  return "video/quicktime";
   return "video/mp4";
 }
 
