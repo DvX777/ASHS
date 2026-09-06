@@ -256,10 +256,55 @@ export const dashboardApiRoutes = new Elysia({ prefix: "/0x/api" })
   })
   .get("/queue", ({ request, query, set }: any) => {
     if (!dashAuth(request)) { set.status = 401; return { error: "Unauthorized" }; }
-    const { status, page = "1", limit = "50" } = query;
+    const { status = "active", page = "1", limit = "50" } = query;
     const p = Math.max(1, parseInt(page)); const lim = Math.min(200, parseInt(limit));
-    const where = status ? `WHERE q.status='${status.replace(/[^a-z]/g,"")}'` : "";
-    const jobs = db.prepare(`SELECT q.*, m.title, m.type, f.quality, f.season, f.episode, f.language FROM download_queue q JOIN media m ON m.id=q.media_id LEFT JOIN media_files f ON f.id=q.media_file_id ${where} ORDER BY q.priority ASC, q.scheduled_at ASC LIMIT ? OFFSET ?`).all(lim, (p-1)*lim);
+    const offset = (p - 1) * lim;
+
+    if (status === "done" || status === "complete") {
+      // Done tab shows ACTUALLY completed and downloaded files
+      const jobs = db.prepare(`
+        SELECT f.id, m.id as media_id, m.title, m.year, m.type, f.quality, f.file_size, f.file_path, f.completed_at, 'complete' as status
+        FROM media_files f
+        JOIN media m ON m.id = f.media_id
+        WHERE f.status = 'complete'
+        ORDER BY f.completed_at DESC, f.id DESC
+        LIMIT ? OFFSET ?
+      `).all(lim, offset);
+      return { jobs };
+    }
+
+    if (status === "pending") {
+      // Pending tab shows movies waiting for automated Radarr download
+      const jobs = db.prepare(`
+        SELECT m.id, m.tmdb_id, m.title, m.year, m.type, m.popularity, m.vote_average, m.status, 1080 as quality
+        FROM media m
+        WHERE m.status IN ('pending', 'resolving')
+        ORDER BY m.popularity DESC
+        LIMIT ? OFFSET ?
+      `).all(lim, offset);
+      return { jobs };
+    }
+
+    if (status === "failed") {
+      const jobs = db.prepare(`
+        SELECT m.id, m.tmdb_id, m.title, m.year, m.type, m.status, 'Resolver or indexer failed' as error, 1080 as quality
+        FROM media m
+        WHERE m.status = 'failed'
+        ORDER BY m.updated_at DESC
+        LIMIT ? OFFSET ?
+      `).all(lim, offset);
+      return { jobs };
+    }
+
+    // Default fallback
+    const jobs = db.prepare(`
+      SELECT q.*, m.title, m.type, f.quality
+      FROM download_queue q
+      JOIN media m ON m.id = q.media_id
+      LEFT JOIN media_files f ON f.id = q.media_file_id
+      WHERE q.status = ?
+      LIMIT ? OFFSET ?
+    `).all(status, lim, offset);
     return { jobs };
   })
   .post("/queue/:id/retry",  ({ request, params, set }: any) => { if (!dashAuth(request)) { set.status=401; return { error:"Unauthorized" }; } db.prepare("UPDATE download_queue SET status='queued', attempts=0, scheduled_at=datetime('now') WHERE id=?").run(parseInt(params.id)); return { ok: true }; })

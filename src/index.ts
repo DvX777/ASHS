@@ -44,6 +44,12 @@ async function main() {
   if (orphaned.changes > 0) {
     Logger.info(`[ASHS] Reset ${orphaned.changes} orphaned active job(s) to queued`);
   }
+  // Clean up legacy 429 garbage from download_queue
+  try {
+    const purged = db.prepare("DELETE FROM download_queue WHERE error LIKE '%429%' OR status IN ('failed','cancelled')").run().changes;
+    if (purged > 0) Logger.info(`[ASHS] Purged ${purged} legacy 429/failed queue rows`);
+  } catch {}
+
   // Start background services
   startScheduler().catch(err => Logger.error(`[Scheduler] Fatal: ${err.message}`));
   startDownloadManager().catch(err => Logger.error(`[DownloadManager] Fatal: ${err.message}`));

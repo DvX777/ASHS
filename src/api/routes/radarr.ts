@@ -108,18 +108,26 @@ export const radarrRoutes = new Elysia({ prefix: "/0x/api/radarr" })
     return {
       activeCount: queue.length,
       maxSlots: Config.MAX_CONCURRENT_DOWNLOADS,
-      records: queue.map((q: any) => ({
-        id: q.id,
-        title: q.title,
-        status: q.status,
-        trackedDownloadState: q.trackedDownloadState,
-        size: q.size,
-        sizeleft: q.sizeleft,
-        timeleft: q.timeleft,
-        estimatedCompletionTime: q.estimatedCompletionTime,
-        downloadClient: q.downloadClient,
-        indexer: q.indexer,
-      })),
+      records: queue.map((q: any) => {
+        const cleanTitle = q.movie?.title 
+          ? `${q.movie.title} (${q.movie.year || ""})`.trim()
+          : (q.title && !/^[0-9a-f]{30,}$/i.test(q.title) ? q.title : "Downloading Torrent Metadata...");
+        return {
+          id: q.id,
+          movieId: q.movieId,
+          title: cleanTitle,
+          releaseTitle: q.title,
+          status: q.status,
+          trackedDownloadState: q.trackedDownloadState,
+          trackedDownloadStatus: q.trackedDownloadStatus,
+          size: q.size ?? 0,
+          sizeleft: q.sizeleft ?? 0,
+          timeleft: q.timeleft,
+          estimatedCompletionTime: q.estimatedCompletionTime,
+          downloadClient: q.downloadClient ?? "qBittorrent",
+          indexer: q.indexer,
+        };
+      }),
     };
   })
 
