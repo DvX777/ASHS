@@ -1,4 +1,4 @@
-﻿// src/download/manager.ts ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Priority download queue processor (3 concurrent)
+// src/download/manager.ts ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Priority download queue processor (3 concurrent)
 import fs from "fs";
 import path from "path";
 import { Config } from "../config";
@@ -255,8 +255,12 @@ async function executeDownload(job: any): Promise<void> {
     QueueQueries.markDone.run(job.id);
 
     // Check if all files for this media are done
-    const { all_done } = FileQueries.allComplete.get(job.media_id) as { all_done: number };
-    if (all_done) MediaQueries.setStatus.run("ready", job.tmdb_id, job.type);
+    // Use readyCheck: ready if >=1 file complete AND no more active/queued jobs
+    // Fixes: SRR quality upgrade fails -> 480p done + 1080p failed -> should be ready
+    const { should_be_ready } = FileQueries.readyCheck.get(job.media_id, job.media_id) as { should_be_ready: number };
+    if (should_be_ready) {
+      MediaQueries.setStatus.run('ready', job.tmdb_id, job.type);
+    }
 
     Logger.info(`[Download] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ Done: ${job.title} ${job.quality}p (${formatBytes(stat.size)})`);
     // Smart notifications: movie = rate-limited individual, TV = season complete only
@@ -319,6 +323,22 @@ async function executeDownload(job: any): Promise<void> {
     QueueQueries.markFailed.run(msg, job.id);
     // Re-queue if attempts remain
     if (job.attempts < job.max_attempts - 1) QueueQueries.requeueFailed.run(job.id);
+    // CRITICAL: After job fails, check if media should now be 'ready'
+    // (e.g. SRR queued 1080p upgrade, it failed, but 480p is already complete)
+    try {
+      const { should_be_ready: canMarkReady } = FileQueries.readyCheck.get(job.media_id, job.media_id) as { should_be_ready: number };
+      if (canMarkReady) {
+        MediaQueries.setStatus.run('ready', job.tmdb_id, job.type);
+        Logger.info('[Download] Partial success -> marked ready: ' + job.title);
+      } else {
+        // No complete files at all and no pending retries -> mark failed
+        const hasComplete = (db.prepare("SELECT COUNT(*) as c FROM media_files WHERE media_id=? AND status='complete'").get(job.media_id) as any).c;
+        const hasPending  = (db.prepare("SELECT COUNT(*) as c FROM download_queue WHERE media_id=? AND status IN ('active','queued','pending')").get(job.media_id) as any).c;
+        if (!hasComplete && !hasPending) {
+          MediaQueries.setStatus.run('failed', job.tmdb_id, job.type);
+        }
+      }
+    } catch {}
     // Clean up partial file
     try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch {}
   }

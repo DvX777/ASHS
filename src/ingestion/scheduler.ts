@@ -1,9 +1,10 @@
-﻿// src/ingestion/scheduler.ts — Cron-based ingestion orchestrator
+// src/ingestion/scheduler.ts — Cron-based ingestion orchestrator
 import { Logger } from "../utils/logger";
 import { Discord, notifyDailyStats } from "../utils/discord";
 import { discoverContent } from "./discovery";
 import { runSRR } from "./srr";
 import { sleep } from "../utils/helpers";
+import { db } from "../db";
 import { isDiskCritical } from "../storage/stats";
 import { cleanTempDir } from "../storage/cleanup";
 import fs from "fs";
@@ -37,6 +38,22 @@ export async function startScheduler(): Promise<void> {
   }, INTERVALS[0].ms);
 
   scheduleDailyStats();
+
+  // Auto-heal: every 60s, fix media that has complete files but wrong status
+  // This is the permanent fix for 'Complete Files Not Ready' - no manual button needed
+  setInterval(() => {
+    try {
+      const fixed = db.prepare(
+        UPDATE media SET status='ready', updated_at=datetime('now')
+         WHERE status NOT IN ('ready','removed')
+         AND id IN (SELECT DISTINCT media_id FROM media_files WHERE status='complete')
+         AND NOT EXISTS (SELECT 1 FROM download_queue WHERE media_id=media.id AND status IN ('active','queued','pending'))`
+      ).run().changes;
+      if (fixed > 0) Logger.info([AutoHeal] Restored  media to ready);
+    } catch (e) {
+      Logger.warn('[AutoHeal] Error: ' + (e as Error).message);
+    }
+  }, 60_000); // every 60 seconds
   scheduleStaleRefresh();
 
   // Poll for manual trigger file
