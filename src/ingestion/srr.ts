@@ -148,32 +148,27 @@ export async function runSRR(): Promise<void> {
   }
 
   // â”€â”€ 5. Quality upgrade â€” 720p-only with no 1080p attempt â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const upgradeTargets = db.prepare(`
-    SELECT DISTINCT m.id, m.title, m.tmdb_id, m.type
-    FROM media m
-    JOIN media_files f ON f.media_id = m.id
-    WHERE m.status = 'ready'
-      AND f.quality = 720
-      AND f.status = 'complete'
-      AND NOT EXISTS (
-        SELECT 1 FROM media_files f2
-        WHERE f2.media_id = m.id AND f2.quality = 1080
-      )
-    LIMIT 20
-  `).all() as any[];
-
-  for (const m of upgradeTargets) {
-    // Check if 1080p file exists on disk (shouldn't if DB says no 1080p)
-    const relPath = buildRelativePath(m.type, m.tmdb_id, 1080, 0, 0);
-    const absPath = path.join(Config.MEDIA_DIR, relPath);
-    if (fs.existsSync(absPath)) continue;
-
-    // Reset to downloading so manager will re-resolve and try 1080p
-    db.prepare("UPDATE media SET status='pending', updated_at=datetime('now') WHERE id=?").run(m.id);
-    Logger.info(`[SRR] Quality upgrade queued: ${m.title} (needs 1080p)`);
-    healed++;
-    issues.push(`Quality upgrade: ${m.title}`);
+  // 5. Permanent Auto-Heal: Any media with complete files MUST be status='ready'
+  const restored = db.prepare(`
+    UPDATE media SET status='ready', updated_at=datetime('now')
+    WHERE status NOT IN ('ready','removed')
+      AND id IN (SELECT DISTINCT media_id FROM media_files WHERE status='complete')
+  `).run().changes;
+  if (restored > 0) {
+    Logger.info(`[SRR] Auto-healed ${restored} media with complete files to ready`);
   }
+
+  // 6. Sync with Radarr completed downloads
+  try {
+    const { RadarrClient } = await import("../integrations/radarr");
+    if (Config.RADARR_ENABLED && Config.RADARR_API_KEY) {
+      const syncRes = await RadarrClient.syncMoviesWithASHS();
+      if (syncRes.synced > 0) {
+        healed += syncRes.synced;
+        issues.push(`Radarr synced: ${syncRes.synced} movies`);
+      }
+    }
+  } catch {}
 
   // â”€â”€ Summary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const unavailCount = (db.prepare("SELECT COUNT(*) as c FROM media WHERE status='unavailable'").get() as any).c;

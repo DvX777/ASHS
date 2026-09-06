@@ -41,6 +41,12 @@ cat << 'EOF' > "$CONF_DIR/qBittorrent.conf"
 [LegalNotice]
 Accepted=true
 
+[BitTorrent]
+Session\MaxActiveDownloads=20
+Session\MaxActiveTorrents=25
+Session\MaxActiveUploads=5
+Session\QueueingSystemEnabled=false
+
 [Preferences]
 WebUI\Port=8080
 WebUI\LocalHostAuth=false
@@ -48,6 +54,9 @@ WebUI\AuthSubnetWhitelist=127.0.0.1/32
 WebUI\AuthSubnetWhitelistEnabled=true
 Downloads\SavePath=/opt/ashs/media/.downloads/
 Downloads\TempPath=/opt/ashs/media/.downloads/temp/
+Queueing\QueueingEnabled=false
+Queueing\MaxActiveDownloads=20
+Queueing\MaxActiveTorrents=25
 Session\MaxActiveDownloads=20
 Session\MaxActiveTorrents=25
 Session\MaxActiveUploads=5
