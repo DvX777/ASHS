@@ -4,6 +4,8 @@ bun.lockb
 
 # Build output
 dist/
+!src/admin/dashboard/dist
+!src/admin/dashboard/dist/**
 
 # Environment — NEVER commit
 .env

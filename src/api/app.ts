@@ -24,11 +24,26 @@ function getTunnelStatus(): "connected" | "disconnected" | "unknown" {
 function serveAdmin(filePath: string): Response {
   const distDir = path.join(import.meta.dir, "../admin/dashboard/dist");
   const abs = path.join(distDir, filePath);
+  const mimeTypes: Record<string, string> = {
+    ".js": "application/javascript",
+    ".css": "text/css",
+    ".html": "text/html",
+    ".svg": "image/svg+xml",
+    ".json": "application/json",
+    ".png": "image/png",
+    ".ico": "image/x-icon",
+  };
   if (fs.existsSync(abs) && fs.statSync(abs).isFile()) {
-    return new Response(Bun.file(abs));
+    const ext = path.extname(abs).toLowerCase();
+    const contentType = mimeTypes[ext] || "application/octet-stream";
+    return new Response(Bun.file(abs), {
+      headers: { "Content-Type": contentType },
+    });
   }
   // SPA fallback
-  return new Response(Bun.file(path.join(distDir, "index.html")));
+  return new Response(Bun.file(path.join(distDir, "index.html")), {
+    headers: { "Content-Type": "text/html; charset=utf-8" },
+  });
 }
 
 export function createApiApp() {
