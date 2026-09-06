@@ -108,7 +108,7 @@ export class RadarrClient {
         title: movieData?.title || title,
         tmdbId,
         qualityProfileId: qualityProfileId || 1,
-        rootFolderPath: Config.RADARR_ROOT_FOLDER || "/media/Movies",
+        rootFolderPath: Config.RADARR_ROOT_FOLDER || "/mnt/media/movies",
         monitored: true,
         addOptions: {
           searchForMovie: true,
@@ -219,7 +219,7 @@ export class RadarrClient {
             title: movieData?.title || m.title,
             tmdbId: parseInt(m.tmdb_id, 10),
             qualityProfileId: 1,
-            rootFolderPath: Config.RADARR_ROOT_FOLDER || "/media/Movies",
+            rootFolderPath: Config.RADARR_ROOT_FOLDER || "/mnt/media/movies",
             monitored: true,
             addOptions: {
               searchForMovie: false, // Already exists on disk

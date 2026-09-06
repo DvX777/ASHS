@@ -20,8 +20,8 @@ export const Config = {
 
   // Storage
   DB_PATH: env("DB_PATH", "./ashs.sqlite3"),
-  TEMP_DIR: env("TEMP_DIR", "/opt/ashs/media/.downloads"),
-  MEDIA_DIR: env("MEDIA_DIR", "./media"),
+  TEMP_DIR: env("TEMP_DIR", "/mnt/media/downloads/temp"),
+  MEDIA_DIR: env("MEDIA_DIR", "/mnt/media"),
 
   // TMDB
   TMDB_API_KEY: env("TMDB_API_KEY"),
@@ -42,7 +42,7 @@ export const Config = {
   RADARR_ENABLED: env("RADARR_ENABLED", "true") === "true",
   RADARR_URL: env("RADARR_URL", "http://127.0.0.1:7878"),
   RADARR_API_KEY: env("RADARR_API_KEY", ""),
-  RADARR_ROOT_FOLDER: env("RADARR_ROOT_FOLDER", "/opt/ashs/media/movies"),
+  RADARR_ROOT_FOLDER: env("RADARR_ROOT_FOLDER", "/mnt/media/movies"),
   QBITTORRENT_URL: env("QBITTORRENT_URL", "http://127.0.0.1:8080"),
 
   // Ingestion

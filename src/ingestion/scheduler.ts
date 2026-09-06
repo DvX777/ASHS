@@ -1,4 +1,5 @@
 // src/ingestion/scheduler.ts — Cron-based ingestion orchestrator
+import { Config } from "../config";
 import { Logger } from "../utils/logger";
 import { Discord, notifyDailyStats } from "../utils/discord";
 import { discoverContent } from "./discovery";
