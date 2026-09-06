@@ -1,4 +1,4 @@
-// src/ingestion/radarrFeeder.ts - Automated background queue feeder for Radarr
+// src/ingestion/radarrFeeder.ts - Automated background queue feeder & fake release purger for Radarr
 import { Config } from "../config";
 import { Logger } from "../utils/logger";
 import { db } from "../db";
@@ -18,6 +18,9 @@ export async function startRadarrFeeder(): Promise<void> {
 
   // Initial delay so system services are up
   await sleep(15_000);
+
+  // Setup release profile to block fake .exe releases
+  await ensureMalwareFilter().catch(() => {});
 
   // Initial sync with Radarr library
   await RadarrClient.syncMoviesWithASHS().catch(() => {});
@@ -39,6 +42,41 @@ export async function startRadarrFeeder(): Promise<void> {
   }
 }
 
+async function ensureMalwareFilter(): Promise<void> {
+  const radarrUrl = (Config.RADARR_URL || "http://127.0.0.1:7878").replace(/\/+$/, "");
+  const headers = {
+    "X-Api-Key": Config.RADARR_API_KEY,
+    "Content-Type": "application/json",
+  };
+
+  try {
+    const res = await fetch(`${radarrUrl}/api/v3/releaseprofile`, { headers });
+    if (!res.ok) return;
+    const profiles = await res.json();
+    const existing = profiles.find((p: any) => p.name === "ASHS Anti-Malware Filter");
+
+    const ignoredTerms = ["exe", "rar", "zip", "password", ".exe", ".iso"];
+
+    if (!existing) {
+      await fetch(`${radarrUrl}/api/v3/releaseprofile`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          name: "ASHS Anti-Malware Filter",
+          enabled: true,
+          required: [],
+          ignored: ignoredTerms,
+          indexerId: 0,
+          tags: [],
+        }),
+      });
+      Logger.info("[RadarrFeeder] Created Anti-Malware Release Profile in Radarr (blocks .exe, .rar)");
+    }
+  } catch (err: any) {
+    Logger.warn(`[RadarrFeeder] Could not configure release profile: ${err.message}`);
+  }
+}
+
 async function feederTick(): Promise<void> {
   if (!Config.RADARR_API_KEY) return;
 
@@ -48,6 +86,25 @@ async function feederTick(): Promise<void> {
 
   // Check current queue length in Radarr
   const queue = await RadarrClient.getQueue();
+
+  // 1. Auto-purge any fake or stuck releases (e.g. .exe files or unimportable releases)
+  for (const q of queue) {
+    const titleLower = (q.title || "").toLowerCase();
+    const releaseTitleLower = (q.releaseTitle || "").toLowerCase();
+    const isExe = titleLower.endsWith(".exe") || releaseTitleLower.endsWith(".exe") || titleLower.includes(".exe");
+    const statusMsg = JSON.stringify(q.statusMessages || []).toLowerCase();
+    const unimportable = statusMsg.includes("no files found are eligible for import") || statusMsg.includes("not a video file");
+
+    if (isExe || (q.trackedDownloadStatus === "warning" && unimportable)) {
+      Logger.warn(`[RadarrFeeder] Auto-purging stuck/fake release: "${q.title}" (ID: ${q.id})`);
+      await RadarrClient.deleteQueueItem(q.id, true, true).catch(() => {});
+      if (q.movieId) {
+        // Trigger search for legitimate release
+        await RadarrClient.autoSearch(q.movieId).catch(() => {});
+      }
+    }
+  }
+
   const activeCount = queue.length;
   const maxSlots = Config.MAX_CONCURRENT_DOWNLOADS || 20;
 
