@@ -1,7 +1,7 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useQueueStore } from "../store/queueStore";
 import { api } from "../api/client";
-import { Btn, Badge, ProgressBar, SectionHeader, fmtBytes, toast, Card } from "../components/common";
+import { Btn, Badge, ProgressBar, SectionHeader, toast, Card } from "../components/common";
 import styles from "./QueuePage.module.css";
 
 type Tab = "active" | "pending" | "failed" | "done";
@@ -9,19 +9,44 @@ type Tab = "active" | "pending" | "failed" | "done";
 export function QueuePage() {
   const [tab, setTab] = useState<Tab>("active");
   const [jobs, setJobs] = useState<any[]>([]);
+  const [radarrQueue, setRadarrQueue] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const { active, pending, failed, activeJobs } = useQueueStore();
+  const { pending, failed } = useQueueStore();
   const [paused, setPaused] = useState(false);
 
   const load = async () => {
     setLoading(true);
     try {
-      const r = await api.queue({ status: tab, limit: "100" });
-      setJobs(r.jobs ?? []);
+      if (tab === "active") {
+        const rq = await api.radarrQueue().catch(() => ({ records: [] }));
+        setRadarrQueue(rq.records ?? []);
+      } else {
+        const r = await api.queue({ status: tab, limit: "100" });
+        setJobs(r.jobs ?? []);
+      }
     } catch {} finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); }, [tab]);
+  useEffect(() => {
+    load();
+    const interval = setInterval(() => {
+      if (tab === "active") {
+        api.radarrQueue().then((rq: any) => setRadarrQueue(rq.records ?? [])).catch(() => {});
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [tab]);
+
+  const cancelRadarrJob = async (id: number, title: string) => {
+    if (!confirm(`Cancel download for "${title}"?`)) return;
+    try {
+      await api.radarrCancelQueue(id);
+      toast("Download cancelled and removed from qBittorrent", "info");
+      load();
+    } catch (e: any) {
+      toast(e.message, "error");
+    }
+  };
 
   const retry = async (id: number) => {
     await api.retryJob(id).catch((e) => toast(e.message, "error"));
@@ -45,7 +70,7 @@ export function QueuePage() {
   };
 
   const TABS: Tab[] = ["active", "pending", "failed", "done"];
-  const COUNTS: Record<Tab, number> = { active, pending, failed, done: 0 };
+  const COUNTS: Record<Tab, number> = { active: radarrQueue.length, pending, failed, done: 0 };
 
   return (
     <div className={styles.page}>
@@ -77,31 +102,47 @@ export function QueuePage() {
       </div>
 
       <Card>
-        {/* Active jobs with real-time progress */}
+        {/* Active qBittorrent / Radarr downloads */}
         {tab === "active" && (
           <div className={styles.jobList}>
-            {Object.entries(activeJobs).length === 0 && (
-              <p className={styles.empty}>No active downloads</p>
+            {radarrQueue.length === 0 && (
+              <p className={styles.empty}>No active downloads running in qBittorrent</p>
             )}
-            {Object.entries(activeJobs).map(([id, job]: [string, any]) => (
-              <div key={id} className={styles.activeJob}>
-                <div className={styles.jobHeader}>
-                  <span className={styles.jobTitle}>{job.title}</span>
-                  <Badge status={job.quality >= 1080 ? "ready" : "downloading"} />
-                  <span className={styles.jobQual}>{job.quality}p</span>
+            {radarrQueue.map((job: any) => {
+              const total = job.size || 1;
+              const left = job.sizeleft || 0;
+              const pct = Math.max(0, Math.min(100, Math.round(((total - left) / total) * 100)));
+              const totalGb = (total / (1024 * 1024 * 1024)).toFixed(2);
+              const downloadedGb = ((total - left) / (1024 * 1024 * 1024)).toFixed(2);
+
+              return (
+                <div key={job.id} className={styles.activeJob}>
+                  <div className={styles.jobHeader}>
+                    <div>
+                      <span className={styles.jobTitle}>{job.title}</span>
+                      <span style={{ marginLeft: "8px", fontSize: "11px", color: "var(--muted)" }}>
+                        via {job.downloadClient ?? "qBittorrent"}
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <span className={styles.jobQual}>{job.status}</span>
+                      <Btn small variant="danger" onClick={() => cancelRadarrJob(job.id, job.title)}>
+                        Cancel
+                      </Btn>
+                    </div>
+                  </div>
+                  <ProgressBar value={pct} />
+                  <div className={styles.jobMeta}>
+                    <span>{pct}% ({downloadedGb} GB / {totalGb} GB)</span>
+                    {job.timeleft && <span>ETA: {job.timeleft}</span>}
+                  </div>
                 </div>
-                <ProgressBar value={job.percent} />
-                <div className={styles.jobMeta}>
-                  <span>{job.percent?.toFixed(1)}%</span>
-                  {job.speed > 0 && <span>{fmtBytes(job.speed)}/s</span>}
-                  {job.eta > 0 && <span>ETA {Math.ceil(job.eta / 60)}m</span>}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
-        {/* Other tabs */}
+        {/* Other legacy tabs */}
         {tab !== "active" && (
           <table className={styles.table}>
             <thead>
@@ -118,7 +159,7 @@ export function QueuePage() {
                   <td>{j.quality}p</td>
                   <td><Badge status={j.status} /></td>
                   <td>{j.attempts}/{j.max_attempts}</td>
-                  <td className={styles.errorCell} title={j.error}>{j.error ? j.error.slice(0, 50) : "—"}</td>
+                  <td className={styles.errorCell} title={j.error}>{j.error ? j.error.slice(0, 50) : "-"}</td>
                   <td>
                     <div className={styles.rowActions}>
                       {tab === "failed" && <Btn small onClick={() => retry(j.id)}>Retry</Btn>}

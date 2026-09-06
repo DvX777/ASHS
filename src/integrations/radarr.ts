@@ -125,6 +125,31 @@ export class RadarrClient {
     }
   }
 
+  static async deleteQueueItem(id: number, removeFromClient = true, blocklist = false): Promise<boolean> {
+    const res = await fetch(this.url(`/queue/${id}?removeFromClient=${removeFromClient}&blocklist=${blocklist}`), {
+      method: "DELETE",
+      headers: this.headers,
+    });
+    return res.ok;
+  }
+
+  static async autoSearch(movieId: number): Promise<boolean> {
+    const res = await fetch(this.url("/command"), {
+      method: "POST",
+      headers: this.headers,
+      body: JSON.stringify({ name: "MoviesSearch", movieIds: [movieId] }),
+    });
+    return res.ok;
+  }
+
+  static async lookupMovie(term: string): Promise<any[]> {
+    const res = await fetch(this.url(`/movie/lookup?term=${encodeURIComponent(term)}`), {
+      headers: this.headers,
+    });
+    if (!res.ok) return [];
+    return await res.json();
+  }
+
   static async rescanMovie(movieId: number): Promise<boolean> {
     const res = await fetch(this.url("/command"), {
       method: "POST",

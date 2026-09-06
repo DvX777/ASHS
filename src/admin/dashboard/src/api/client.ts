@@ -43,7 +43,11 @@ export const api = {
   checkAuth: () =>            req<{ ok: boolean }>("GET",  "/auth/check", undefined, { silent401: true }),
 
   // Radarr & qBittorrent
-  radarrStatus:   () => req<any>("GET", "/radarr/status"),
+  radarrStatus:       () => req<any>("GET", "/radarr/status"),
+  radarrLookup:       (term: string) => req<any>("GET", `/radarr/lookup?term=${encodeURIComponent(term)}`),
+  radarrAdd:          (tmdbId: number, title: string, qualityProfileId = 1) => req<any>("POST", "/radarr/add", { tmdbId, title, qualityProfileId }),
+  radarrCancelQueue:  (id: number) => req<any>("DELETE", `/radarr/queue/${id}`),
+  radarrAutoSearch:   (movieId: number) => req<any>("POST", "/radarr/auto-search", { movieId }),
   radarrQueue:    () => req<any>("GET", "/radarr/queue"),
   radarrSearch:   (movieId: number) => req<any>("GET", `/radarr/search?movieId=${movieId}`),
   radarrGrab:     (guid: string, indexerId: number) => req<any>("POST", "/radarr/grab", { guid, indexerId }),

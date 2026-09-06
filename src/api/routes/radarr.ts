@@ -123,6 +123,52 @@ export const radarrRoutes = new Elysia({ prefix: "/0x/api/radarr" })
     return { releases };
   })
 
+  // Cancel active download from Radarr and qBittorrent
+  .delete("/queue/:id", async ({ request, params, set }: any) => {
+    if (!validateDashSession(request)) { set.status = 401; return { error: "Unauthorized" }; }
+    const id = parseInt(params.id, 10);
+    if (!id) { set.status = 400; return { error: "Queue ID required" }; }
+    const ok = await RadarrClient.deleteQueueItem(id, true, true);
+    return { ok };
+  })
+
+  // Search TMDB for new movies to add directly to Radarr
+  .get("/lookup", async ({ request, query, set }: any) => {
+    if (!validateDashSession(request)) { set.status = 401; return { error: "Unauthorized" }; }
+    const term = query.term ?? "";
+    if (!term) return { results: [] };
+    const results = await RadarrClient.lookupMovie(term);
+    return { results: results.slice(0, 10) };
+  })
+
+  // Add new movie to Radarr with auto-search enabled
+  .post("/add", async ({ request, body, set }: any) => {
+    if (!validateDashSession(request)) { set.status = 401; return { error: "Unauthorized" }; }
+    const { tmdbId, title, qualityProfileId = 1 } = body ?? {};
+    if (!tmdbId || !title) { set.status = 400; return { error: "tmdbId and title required" }; }
+    try {
+      const movie = await RadarrClient.addMovie(tmdbId, title, qualityProfileId);
+      db.prepare(`
+        INSERT INTO media (tmdb_id, type, title, status)
+        VALUES (?, 'movie', ?, 'downloading')
+        ON CONFLICT(tmdb_id, type) DO UPDATE SET status='downloading', updated_at=datetime('now')
+      `).run(String(tmdbId), title);
+      return { ok: true, movie };
+    } catch (e: any) {
+      set.status = 500;
+      return { error: e.message };
+    }
+  })
+
+  // Trigger automated search in Radarr for an existing movie
+  .post("/auto-search", async ({ request, body, set }: any) => {
+    if (!validateDashSession(request)) { set.status = 401; return { error: "Unauthorized" }; }
+    const { movieId } = body ?? {};
+    if (!movieId) { set.status = 400; return { error: "movieId required" }; }
+    const ok = await RadarrClient.autoSearch(movieId);
+    return { ok };
+  })
+
   .post("/grab", async ({ request, body, set }: any) => {
     if (!validateDashSession(request)) { set.status = 401; return { error: "Unauthorized" }; }
     const { guid, indexerId } = body ?? {};
