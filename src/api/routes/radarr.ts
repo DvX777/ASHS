@@ -20,7 +20,7 @@ function validateDashSession(req: Request): boolean {
 
 export const radarrRoutes = new Elysia({ prefix: "/0x/api/radarr" })
 
-  // Webhook received from Radarr (On Download, On Upgrade, On Grab)
+  // Webhook received from Radarr (On Download, On Upgrade, On Grab, On Test)
   .post("/webhook", async ({ body, set }: any) => {
     try {
       const eventType = body?.eventType;
@@ -29,26 +29,45 @@ export const radarrRoutes = new Elysia({ prefix: "/0x/api/radarr" })
 
       Logger.info(`[RadarrWebhook] Event: ${eventType} for ${movie?.title ?? "unknown"}`);
 
+      if (eventType === "Test") {
+        Logger.info("[RadarrWebhook] Received Test event from Radarr - Webhook connection is healthy");
+        return { ok: true, message: "Webhook reachable and active" };
+      }
+
       if (eventType === "Grab") {
         const title = movie?.title ?? "Movie";
         const indexer = body?.release?.indexer ?? "Tracker";
         const releaseTitle = body?.release?.releaseTitle ?? "";
         await Discord.movieGrabbed(title, indexer, releaseTitle).catch(() => {});
-      } else if (eventType === "Download" || eventType === "Upgrade") {
-        const tmdbId = String(movie?.tmdbId);
+        return { ok: true };
+      }
+
+      if (eventType === "Download" || eventType === "Upgrade") {
+        const tmdbId = String(movie?.tmdbId || "");
         const title = movie?.title ?? "Untitled";
         const year = movie?.year ?? null;
-        const absPath = movieFile?.path;
-        const size = movieFile?.size ?? 0;
-        const qualityName = movieFile?.quality ?? "1080p";
-        
+        const absPath = movieFile?.path || movie?.folderPath || "";
+        const size = movieFile?.size ?? body?.release?.size ?? 0;
+
+        let qualityName = "1080p";
         let res = 1080;
+        if (typeof movieFile?.quality === "object") {
+          qualityName = movieFile.quality?.quality?.name || movieFile.quality?.name || "1080p";
+          res = movieFile.quality?.quality?.resolution || 1080;
+        } else if (typeof movieFile?.quality === "string") {
+          qualityName = movieFile.quality;
+        }
         if (/2160|4k/i.test(qualityName)) res = 2160;
         else if (/720/i.test(qualityName)) res = 720;
         else if (/480/i.test(qualityName)) res = 480;
 
-        if (absPath && tmdbId) {
-          const relPath = path.isAbsolute(absPath) && absPath.startsWith(Config.MEDIA_DIR)
+        // Fire Discord alert immediately for any successful download
+        await Discord.downloadDone(title, size, res).catch((err) => {
+          Logger.warn(`[RadarrWebhook] Discord alert error: ${err.message}`);
+        });
+
+        if (tmdbId) {
+          const relPath = absPath && path.isAbsolute(absPath) && absPath.startsWith(Config.MEDIA_DIR)
             ? path.relative(Config.MEDIA_DIR, absPath).replace(/\\/g, "/")
             : absPath;
 
@@ -63,7 +82,7 @@ export const radarrRoutes = new Elysia({ prefix: "/0x/api/radarr" })
           `).run(tmdbId, title, year);
 
           const m = MediaQueries.findByTmdb.get(tmdbId, "movie");
-          if (m) {
+          if (m && relPath) {
             db.prepare(`
               INSERT INTO media_files (media_id, season, episode, quality, language, format, file_path, file_size, status, completed_at, progress)
               VALUES (?, 0, 0, ?, 'Original', 'mkv', ?, ?, 'complete', datetime('now'), 1.0)
@@ -76,17 +95,16 @@ export const radarrRoutes = new Elysia({ prefix: "/0x/api/radarr" })
             `).run(m.id, res, relPath, size);
 
             Logger.info(`[RadarrWebhook] Successfully imported: ${title} (${res}p) -> ${relPath}`);
-            
+
             eventBus.emit("download:complete", {
               jobId: m.id,
               title,
               quality: res,
               size,
             });
-
-            await Discord.downloadDone(`[Radarr] ${title}`, size, res).catch(() => {});
           }
         }
+        return { ok: true };
       }
 
       return { ok: true };
