@@ -16,6 +16,13 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        entryFileNames: "assets/ashs-[name]-[hash].js",
+        chunkFileNames: "assets/ashs-[name]-[hash].js",
+        assetFileNames: "assets/ashs-[name]-[hash].[ext]",
+      },
+    },
   },
   css: {
     postcss: {},

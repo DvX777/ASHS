@@ -25,11 +25,11 @@ function serveAdmin(filePath: string): Response {
   const distDir = path.join(import.meta.dir, "../admin/dashboard/dist");
   const abs = path.join(distDir, filePath);
   const mimeTypes: Record<string, string> = {
-    ".js": "application/javascript",
-    ".css": "text/css",
-    ".html": "text/html",
+    ".js": "application/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".html": "text/html; charset=utf-8",
     ".svg": "image/svg+xml",
-    ".json": "application/json",
+    ".json": "application/json; charset=utf-8",
     ".png": "image/png",
     ".ico": "image/x-icon",
   };
@@ -37,12 +37,20 @@ function serveAdmin(filePath: string): Response {
     const ext = path.extname(abs).toLowerCase();
     const contentType = mimeTypes[ext] || "application/octet-stream";
     return new Response(Bun.file(abs), {
-      headers: { "Content-Type": contentType },
+      headers: {
+        "Content-Type": contentType,
+        "Cache-Control": "public, max-age=31536000, immutable",
+      },
     });
   }
-  // SPA fallback
+  // SPA fallback - NEVER cache index.html
   return new Response(Bun.file(path.join(distDir, "index.html")), {
-    headers: { "Content-Type": "text/html; charset=utf-8" },
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-cache, no-store, must-revalidate",
+      "Pragma": "no-cache",
+      "Expires": "0",
+    },
   });
 }
 
