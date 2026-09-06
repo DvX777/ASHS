@@ -11,7 +11,7 @@ export function LibraryPage() {
   const [page,     setPage]     = useState(1);
   const [loading,  setLoading]  = useState(false);
   const [search,   setSearch]   = useState("");
-  const [status,   setStatus]   = useState("all");
+  const [status,   setStatus]   = useState("ready");
   const [type,     setType]     = useState("all");
   const [view,     setView]     = useState<"grid" | "table">("table");
   const [detail,   setDetail]   = useState<any>(null);
@@ -93,6 +93,34 @@ export function LibraryPage() {
           </div>
         }
       />
+
+            {/* Quick Status Pills */}
+      <div style={{ display: "flex", gap: "8px", marginBottom: "12px", flexWrap: "wrap" }}>
+        {[
+          { key: "ready", label: "Ready / Complete" },
+          { key: "downloading", label: "Downloading" },
+          { key: "pending", label: "Pending" },
+          { key: "failed", label: "Failed" },
+          { key: "all", label: "All Content" },
+        ].map(pill => (
+          <button
+            key={pill.key}
+            onClick={() => { setStatus(pill.key); setPage(1); }}
+            style={{
+              padding: "6px 14px",
+              borderRadius: "20px",
+              border: status === pill.key ? "1px solid var(--accent)" : "1px solid var(--border)",
+              background: status === pill.key ? "rgba(99, 102, 241, 0.15)" : "var(--card)",
+              color: status === pill.key ? "var(--accent)" : "var(--body)",
+              fontWeight: status === pill.key ? "600" : "normal",
+              cursor: "pointer",
+              fontSize: "13px",
+            }}
+          >
+            {pill.label}
+          </button>
+        ))}
+      </div>
 
       {/* Filters */}
       <div className={styles.filters}>

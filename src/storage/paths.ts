@@ -49,5 +49,8 @@ export function buildTempPath(jobId: number): string {
  * Resolve a relative path stored in DB to an absolute path.
  */
 export function resolveMediaPath(relativePath: string): string {
+  if (path.isAbsolute(relativePath)) {
+    return relativePath;
+  }
   return path.join(Config.MEDIA_DIR, relativePath);
 }

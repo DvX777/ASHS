@@ -156,4 +156,34 @@ export const Discord = {
   success: (t: string, d: string) => notify(t, d, "success"),
   warning: (t: string, d: string) => notify(t, d, "warning"),
   error:   (t: string, d: string) => notify(t, d, "error"),
+  downloadDone: async (title: string, sizeBytes: number, quality = 1080) => {
+    try {
+      await send({
+        embeds: [{
+          title: `🎬 Movie Ready: ${title}`,
+          description: `Successfully downloaded and imported into ASHS Library.\n**Quality:** ${fmtQuality(quality)}\n**Size:** ${fmtBytes(sizeBytes)}`,
+          color: COLORS.movie,
+          footer: { text: FOOTER + " | Stream Ready" },
+          timestamp: new Date().toISOString(),
+        }],
+      });
+    } catch (e: any) {
+      Logger.warn(`[Discord] Error sending downloadDone: ${e.message}`);
+    }
+  },
+  movieGrabbed: async (title: string, indexer = "Indexer", releaseTitle = "") => {
+    try {
+      await send({
+        embeds: [{
+          title: `📥 Movie Grabbed: ${title}`,
+          description: `Radarr grabbed a torrent and sent it to qBittorrent.\n**Indexer:** ${indexer}${releaseTitle ? `\n**Release:** \`${releaseTitle}\`` : ""}`,
+          color: COLORS.info,
+          footer: { text: FOOTER + " | qBittorrent Downloading" },
+          timestamp: new Date().toISOString(),
+        }],
+      });
+    } catch (e: any) {
+      Logger.warn(`[Discord] Error sending movieGrabbed: ${e.message}`);
+    }
+  },
 };

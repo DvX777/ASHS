@@ -6,7 +6,12 @@ import styles from "./RadarrPage.module.css";
 export function RadarrPage() {
   const [status, setStatus] = useState<any>({ online: false });
   const [queue, setQueue] = useState<any>({ activeCount: 0, maxSlots: 20, records: [] });
+  const [downloaded, setDownloaded] = useState<any[]>([]);
+  const [loadingDownloaded, setLoadingDownloaded] = useState(false);
   const [, setLoading] = useState(true);
+
+  // Search filter for downloaded library
+  const [downloadedSearch, setDownloadedSearch] = useState("");
 
   // Add Movie via TMDB
   const [searchQuery, setSearchQuery] = useState("");
@@ -17,6 +22,11 @@ export function RadarrPage() {
   const [movieIdInput, setMovieIdInput] = useState("");
   const [releases, setReleases] = useState<any[]>([]);
   const [searchingReleases, setSearchingReleases] = useState(false);
+
+  // Action busy states
+  const [syncingAshs, setSyncingAshs] = useState(false);
+  const [discovering, setDiscovering] = useState(false);
+  const [cleaning, setCleaning] = useState(false);
 
   const fetchStatus = async () => {
     try {
@@ -29,8 +39,19 @@ export function RadarrPage() {
     }
   };
 
+  const fetchDownloaded = async () => {
+    setLoadingDownloaded(true);
+    try {
+      const res = await api.radarrDownloaded().catch(() => ({ items: [] }));
+      setDownloaded(res.items ?? []);
+    } finally {
+      setLoadingDownloaded(false);
+    }
+  };
+
   useEffect(() => {
     fetchStatus();
+    fetchDownloaded();
     const interval = setInterval(fetchStatus, 4000);
     return () => clearInterval(interval);
   }, []);
@@ -52,7 +73,7 @@ export function RadarrPage() {
   const handleAddMovie = async (m: any) => {
     try {
       await api.radarrAdd(m.tmdbId, m.title);
-      toast(`Added "${m.title}" to Radarr! Search started.`, "success");
+      toast(`Added "${m.title}" to Radarr! Automatic indexer search started.`, "success");
       setSearchResults(prev => prev.filter(item => item.tmdbId !== m.tmdbId));
       fetchStatus();
     } catch (e: any) {
@@ -98,9 +119,68 @@ export function RadarrPage() {
     }
   };
 
+  const handleSyncAshs = async () => {
+    setSyncingAshs(true);
+    try {
+      await api.radarrImportAshs();
+      toast("Syncing all 411 ASHS movies into Radarr in background...", "success");
+      setTimeout(fetchDownloaded, 5000);
+    } catch (e: any) {
+      toast(e.message, "error");
+    } finally {
+      setSyncingAshs(false);
+    }
+  };
+
+  const handleTriggerDiscovery = async () => {
+    setDiscovering(true);
+    try {
+      await api.radarrTriggerDiscovery();
+      toast("TMDB discovery cycle triggered! Top movies will queue into Radarr.", "success");
+      setTimeout(fetchStatus, 3000);
+    } catch (e: any) {
+      toast(e.message, "error");
+    } finally {
+      setDiscovering(false);
+    }
+  };
+
+  const handleCleanQueue = async () => {
+    setCleaning(true);
+    try {
+      const res = await api.radarrCleanQueue();
+      toast(`Purged ${res.queueDeleted ?? 0} old failed queue items!`, "success");
+    } catch (e: any) {
+      toast(e.message, "error");
+    } finally {
+      setCleaning(false);
+    }
+  };
+
+  const filteredDownloaded = downloaded.filter(m => {
+    if (!downloadedSearch.trim()) return true;
+    return m.title.toLowerCase().includes(downloadedSearch.toLowerCase());
+  });
+
   return (
     <div className={styles.page}>
       <SectionHeader title="Radarr 6.3.0 Command Center" />
+
+      {/* Quick Action Toolbar */}
+      <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginBottom: "16px" }}>
+        <Btn variant="primary" onClick={handleSyncAshs} disabled={syncingAshs}>
+          {syncingAshs ? "Syncing..." : "🔄 Sync 411 Movies into Radarr"}
+        </Btn>
+        <Btn variant="secondary" onClick={handleTriggerDiscovery} disabled={discovering}>
+          {discovering ? "Discovering..." : "⚡ Trigger Auto-Discovery Now"}
+        </Btn>
+        <Btn variant="secondary" onClick={fetchDownloaded} disabled={loadingDownloaded}>
+          {loadingDownloaded ? "Refreshing..." : "📂 Refresh Downloaded List"}
+        </Btn>
+        <Btn variant="danger" onClick={handleCleanQueue} disabled={cleaning}>
+          {cleaning ? "Cleaning..." : "🧹 Purge Failed MovieBox Queue"}
+        </Btn>
+      </div>
 
       {/* System Status Cards */}
       <div className={styles.statsGrid}>
@@ -129,9 +209,9 @@ export function RadarrPage() {
         </div>
 
         <div className={styles.statCard}>
-          <span className={styles.statLabel}>Storage Architecture</span>
-          <div className={styles.statVal} style={{ fontSize: "16px" }}>
-            <span>21TB HDD (/media/.downloads)</span>
+          <span className={styles.statLabel}>Radarr Downloaded Library</span>
+          <div className={styles.statVal} style={{ fontSize: "18px" }}>
+            <span>{downloaded.length} Movies Downloaded</span>
           </div>
         </div>
       </div>
@@ -193,7 +273,7 @@ export function RadarrPage() {
         <h3 className={styles.sectionTitle}>Live qBittorrent Downloads ({queue.activeCount} Active)</h3>
         {queue.records?.length === 0 ? (
           <p style={{ color: "var(--muted)", padding: "16px 0" }}>
-            No active downloads running in qBittorrent. All {queue.maxSlots} slots available.
+            No active downloads running in qBittorrent. All {queue.maxSlots} slots available. The automatic feeder will dispatch pending movies every 30 seconds.
           </p>
         ) : (
           <table className={styles.queueTable}>
@@ -236,7 +316,66 @@ export function RadarrPage() {
         )}
       </Card>
 
-      {/* 3. Interactive Manual Release Search */}
+      {/* 3. Downloaded Movies in Radarr */}
+      <Card>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "8px" }}>
+          <div>
+            <h3 className={styles.sectionTitle} style={{ margin: 0 }}>
+              Radarr Downloaded Library ({filteredDownloaded.length} of {downloaded.length} Movies)
+            </h3>
+            <span style={{ fontSize: "12px", color: "var(--muted)" }}>
+              Movies imported and stored on the 21TB HDD (/media/Movies)
+            </span>
+          </div>
+          <input
+            className={styles.searchInput}
+            style={{ width: "240px", padding: "6px 12px" }}
+            placeholder="Filter downloaded..."
+            value={downloadedSearch}
+            onChange={(e) => setDownloadedSearch(e.target.value)}
+          />
+        </div>
+
+        {filteredDownloaded.length === 0 ? (
+          <p style={{ color: "var(--muted)", padding: "16px 0" }}>
+            {downloaded.length === 0
+              ? "No downloaded movies found in Radarr yet. Click 'Sync 411 Movies into Radarr' above to index your existing ASHS library!"
+              : "No movies match your filter."}
+          </p>
+        ) : (
+          <div style={{ maxHeight: "450px", overflowY: "auto" }}>
+            <table className={styles.queueTable}>
+              <thead>
+                <tr>
+                  <th>Movie</th>
+                  <th>Quality</th>
+                  <th>Size</th>
+                  <th>Path</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredDownloaded.map((m: any) => {
+                  const size = m.movieFile?.size || m.sizeOnDisk || 0;
+                  const sizeGb = size > 0 ? (size / (1024 * 1024 * 1024)).toFixed(2) + " GB" : "N/A";
+                  const qName = m.movieFile?.quality?.quality?.name ?? "1080p";
+                  return (
+                    <tr key={m.id}>
+                      <td><strong>{m.title} ({m.year})</strong></td>
+                      <td><span className={styles.badgeOnline}>{qName}</span></td>
+                      <td>{sizeGb}</td>
+                      <td style={{ fontSize: "11px", color: "var(--muted)", fontFamily: "monospace" }}>
+                        {m.movieFile?.relativePath || m.movieFile?.path || "/media/Movies/" + m.title}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      {/* 4. Interactive Manual Release Search */}
       <Card>
         <h3 className={styles.sectionTitle}>Manual Release Search (Multi-Indexer)</h3>
         <p style={{ color: "var(--muted)", fontSize: "13px", marginBottom: "16px" }}>

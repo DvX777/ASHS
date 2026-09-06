@@ -3,6 +3,7 @@ import { Logger } from "../utils/logger";
 import { Discord, notifyDailyStats } from "../utils/discord";
 import { discoverContent } from "./discovery";
 import { runSRR } from "./srr";
+import { startRadarrFeeder } from "./radarrFeeder";
 import { sleep } from "../utils/helpers";
 import { db } from "../db";
 import { isDiskCritical } from "../storage/stats";
@@ -26,6 +27,7 @@ export async function startScheduler(): Promise<void> {
   await sleep(30_000);
   await runSRR();   // heal any broken state first
   await runDiscovery();
+  startRadarrFeeder().catch(err => Logger.error("[RadarrFeeder] Fatal: " + err.message));
 
   // Set up recurring timers
   setInterval(async () => {

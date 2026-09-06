@@ -1,4 +1,4 @@
-﻿// src/ingestion/discovery.ts — TMDB discovery: trending, popular, top-rated
+// src/ingestion/discovery.ts � TMDB discovery: trending, popular, top-rated
 import { Config } from "../config";
 import { Logger } from "../utils/logger";
 import { db, MediaQueries } from "../db";

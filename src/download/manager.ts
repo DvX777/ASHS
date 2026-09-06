@@ -34,6 +34,10 @@ export async function startDownloadManager(): Promise<void> {
 }
 
 async function tick(): Promise<void> {
+  if (!Config.INTERNAL_DOWNLOADER_ENABLED) {
+    // Internal MovieBox scraper disabled; Radarr handles movie downloads
+    return;
+  }
   if (isDiskCritical()) {
     Logger.warn('[DownloadManager] Disk critical - pausing');
     await runCleanupIfNeeded();

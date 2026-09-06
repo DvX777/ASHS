@@ -7,6 +7,7 @@ import { RadarrClient } from "../../integrations/radarr";
 import { Logger } from "../../utils/logger";
 import { Discord } from "../../utils/discord";
 import { eventBus } from "../../utils/eventBus";
+import { discoverContent } from "../../ingestion/discovery";
 
 function validateDashSession(req: Request): boolean {
   const cookieHeader = req.headers.get("cookie");
@@ -28,7 +29,12 @@ export const radarrRoutes = new Elysia({ prefix: "/0x/api/radarr" })
 
       Logger.info(`[RadarrWebhook] Event: ${eventType} for ${movie?.title ?? "unknown"}`);
 
-      if (eventType === "Download" || eventType === "Upgrade") {
+      if (eventType === "Grab") {
+        const title = movie?.title ?? "Movie";
+        const indexer = body?.release?.indexer ?? "Tracker";
+        const releaseTitle = body?.release?.releaseTitle ?? "";
+        await Discord.movieGrabbed(title, indexer, releaseTitle).catch(() => {});
+      } else if (eventType === "Download" || eventType === "Upgrade") {
         const tmdbId = String(movie?.tmdbId);
         const title = movie?.title ?? "Untitled";
         const year = movie?.year ?? null;
@@ -42,7 +48,9 @@ export const radarrRoutes = new Elysia({ prefix: "/0x/api/radarr" })
         else if (/480/i.test(qualityName)) res = 480;
 
         if (absPath && tmdbId) {
-          const relPath = path.relative(Config.MEDIA_DIR, absPath).replace(/\\/g, "/");
+          const relPath = path.isAbsolute(absPath) && absPath.startsWith(Config.MEDIA_DIR)
+            ? path.relative(Config.MEDIA_DIR, absPath).replace(/\\/g, "/")
+            : absPath;
 
           db.prepare(`
             INSERT INTO media (tmdb_id, type, title, year, status)
@@ -76,7 +84,7 @@ export const radarrRoutes = new Elysia({ prefix: "/0x/api/radarr" })
               size,
             });
 
-            await Discord.downloadDone(`[Radarr] ${title} (${res}p)`, size);
+            await Discord.downloadDone(`[Radarr] ${title}`, size, res).catch(() => {});
           }
         }
       }
@@ -113,6 +121,12 @@ export const radarrRoutes = new Elysia({ prefix: "/0x/api/radarr" })
         indexer: q.indexer,
       })),
     };
+  })
+
+  .get("/downloaded", async ({ request, set }: any) => {
+    if (!validateDashSession(request)) { set.status = 401; return { error: "Unauthorized" }; }
+    const items = await RadarrClient.getDownloadedMovies();
+    return { count: items.length, items };
   })
 
   .get("/search", async ({ request, query, set }: any) => {
@@ -180,4 +194,35 @@ export const radarrRoutes = new Elysia({ prefix: "/0x/api/radarr" })
   .get("/profiles", async ({ request, set }: any) => {
     if (!validateDashSession(request)) { set.status = 401; return { error: "Unauthorized" }; }
     return await RadarrClient.getQualityProfiles();
+  })
+
+  // Trigger immediate discovery & feeder
+  .post("/trigger-discovery", async ({ request, set }: any) => {
+    if (!validateDashSession(request)) { set.status = 401; return { error: "Unauthorized" }; }
+    discoverContent().catch(err => Logger.error(`[Discovery] Trigger error: ${err.message}`));
+    return { ok: true, message: "Discovery cycle triggered" };
+  })
+
+  // Sync Radarr completed downloads into ASHS
+  .post("/sync-library", async ({ request, set }: any) => {
+    if (!validateDashSession(request)) { set.status = 401; return { error: "Unauthorized" }; }
+    const result = await RadarrClient.syncMoviesWithASHS();
+    return { ok: true, ...result };
+  })
+
+  // Import all 411 existing ASHS movies into Radarr
+  .post("/import-ashs", async ({ request, set }: any) => {
+    if (!validateDashSession(request)) { set.status = 401; return { error: "Unauthorized" }; }
+    // Run in background and return immediate status
+    RadarrClient.importExistingAshsMoviesToRadarr().catch(err => Logger.error(`[RadarrImport] Error: ${err.message}`));
+    return { ok: true, message: "Started importing ASHS library into Radarr in background" };
+  })
+
+  // Clean old dead MovieBox queue
+  .post("/clean-queue", async ({ request, set }: any) => {
+    if (!validateDashSession(request)) { set.status = 401; return { error: "Unauthorized" }; }
+    const qDel = db.prepare("DELETE FROM download_queue WHERE status IN ('failed','cancelled')").run().changes;
+    const mDel = db.prepare("DELETE FROM download_queue WHERE media_id IN (SELECT id FROM media WHERE type = 'movie')").run().changes;
+    const mReset = db.prepare("UPDATE media SET status = 'pending', updated_at = datetime('now') WHERE type = 'movie' AND status IN ('failed', 'resolving')").run().changes;
+    return { ok: true, queueDeleted: qDel + mDel, mediaReset: mReset };
   });
