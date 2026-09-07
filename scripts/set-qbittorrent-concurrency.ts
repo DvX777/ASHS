@@ -1,6 +1,6 @@
 // scripts/set-qbittorrent-concurrency.ts
-// Unlocks qBittorrent download concurrency to 30 active slots
-// Uses proper CSRF headers (Referer, Origin, Cookie) and force-starts all queued torrents
+// Unlocks qBittorrent download concurrency to 50 active slots
+// Gathers actual torrent hashes and calls setForceStart on EVERY torrent
 import { Config } from "../src/config";
 import { Logger } from "../src/utils/logger";
 
@@ -30,14 +30,13 @@ async function getQBCreds() {
 
 async function main() {
   console.log("=====================================================");
-  console.log("  UNLOCK QBITTORRENT CONCURRENCY & REMOVE 5-SLOT LIMIT");
+  console.log("  FORCE-UNLOCK ALL QBITTORRENT DOWNLOAD SLOTS");
   console.log("=====================================================\n");
 
   const creds = await getQBCreds();
   const qbUrl = `http://${creds.host}:${creds.port}`;
-  console.log(`Connecting to qBittorrent at ${qbUrl}...`);
 
-  // 1. Login with proper Referer
+  // 1. Authenticate
   let cookie = "";
   try {
     const loginRes = await fetch(`${qbUrl}/api/v2/auth/login`, {
@@ -55,7 +54,7 @@ async function main() {
       cookie = setCookie.split(";")[0];
       console.log(`[Auth] Logged in to qBittorrent successfully!`);
     } else {
-      console.log(`[Auth] No auth cookie returned (authentication may be disabled on localhost).`);
+      console.log(`[Auth] No auth required on localhost.`);
     }
   } catch (e: any) {
     Logger.error(`Login failed: ${e.message}`);
@@ -71,72 +70,82 @@ async function main() {
     qbHeaders["Cookie"] = cookie;
   }
 
-  // 2. Check current preferences
+  // 2. Set Preferences to DISABLE Queueing and allow 50 downloads
   try {
-    const prefRes = await fetch(`${qbUrl}/api/v2/app/preferences`, { headers: qbHeaders });
-    if (prefRes.ok) {
-      const prefs = await prefRes.json();
-      console.log(`Current Settings before update:`);
-      console.log(`  - queueing_enabled:       ${prefs.queueing_enabled}`);
-      console.log(`  - max_active_downloads:   ${prefs.max_active_downloads}`);
-      console.log(`  - max_active_torrents:    ${prefs.max_active_torrents}`);
-    }
-
-    // 3. Set preferences: DISABLE queueing, allow 30 active downloads
-    console.log(`\nApplying new settings (max_active_downloads: 30, queueing_enabled: false)...`);
+    console.log(`Applying queueing_enabled=false, max_active_downloads=50...`);
     const setRes = await fetch(`${qbUrl}/api/v2/app/setPreferences`, {
       method: "POST",
       headers: qbHeaders,
       body: new URLSearchParams({
         json: JSON.stringify({
           queueing_enabled: false,
-          max_active_downloads: 30,
-          max_active_torrents: 40,
+          max_active_downloads: 50,
+          max_active_torrents: 50,
+          max_active_checking_torrents: 10,
           dont_count_slow_torrents: true,
           slow_torrent_dl_rate_threshold: 50,
         }),
       }).toString(),
     });
+    console.log(`[Preferences Update Status] HTTP ${setRes.status}`);
 
-    if (setRes.ok) {
-      console.log(`[Success] Preferences updated!`);
-    } else {
-      console.log(`[Warning] setPreferences returned HTTP ${setRes.status}`);
+    // Verify preferences
+    const prefRes = await fetch(`${qbUrl}/api/v2/app/preferences`, { headers: qbHeaders });
+    if (prefRes.ok) {
+      const prefs = await prefRes.json();
+      console.log(`[Verified Preferences]`);
+      console.log(`  - queueing_enabled:     ${prefs.queueing_enabled}`);
+      console.log(`  - max_active_downloads: ${prefs.max_active_downloads}`);
+      console.log(`  - max_active_torrents:  ${prefs.max_active_torrents}`);
     }
 
-    // 4. Force-Start ALL torrents (bypasses any queue status)
-    console.log(`\nForce-starting all torrents...`);
-    await fetch(`${qbUrl}/api/v2/torrents/setForceStart`, {
-      method: "POST",
-      headers: qbHeaders,
-      body: new URLSearchParams({ hashes: "all", value: "true" }).toString(),
-    });
-
-    // 5. Resume ALL torrents
-    await fetch(`${qbUrl}/api/v2/torrents/resume`, {
-      method: "POST",
-      headers: qbHeaders,
-      body: new URLSearchParams({ hashes: "all" }).toString(),
-    });
-
-    // 6. Verify and show active torrent list
+    // 3. Fetch ALL torrents and force-start each one by specific hash
     const infoRes = await fetch(`${qbUrl}/api/v2/torrents/info`, { headers: qbHeaders });
     if (infoRes.ok) {
       const torrents = await infoRes.json();
-      console.log(`\nActive Torrents in qBittorrent (${torrents.length} total):`);
-      for (const t of torrents) {
+      console.log(`\nFound ${torrents.length} total torrents in qBittorrent.`);
+
+      const hashes = torrents.map((t: any) => t.hash).join("|");
+      if (hashes) {
+        // FORCE START all torrents (bypasses queue limit completely)
+        const fsRes = await fetch(`${qbUrl}/api/v2/torrents/setForceStart`, {
+          method: "POST",
+          headers: qbHeaders,
+          body: new URLSearchParams({ hashes, value: "true" }).toString(),
+        });
+        console.log(`[ForceStart] Applied to all ${torrents.length} torrents (HTTP ${fsRes.status})`);
+
+        // RESUME all torrents
+        const resRes = await fetch(`${qbUrl}/api/v2/torrents/resume`, {
+          method: "POST",
+          headers: qbHeaders,
+          body: new URLSearchParams({ hashes }).toString(),
+        });
+        console.log(`[Resume] Applied to all ${torrents.length} torrents (HTTP ${resRes.status})`);
+      }
+
+      // Re-fetch to display updated states
+      await new Promise((r) => setTimeout(r, 1000));
+      const updatedInfo = await (await fetch(`${qbUrl}/api/v2/torrents/info`, { headers: qbHeaders })).json();
+
+      let activeDownloading = 0;
+      console.log("\n--- Active Torrent States ---");
+      for (const t of updatedInfo) {
         const speedMB = (t.dlspeed / 1024 / 1024).toFixed(2);
         const progressPct = (t.progress * 100).toFixed(1);
-        console.log(`  - [${t.state}] ${progressPct}% (${speedMB} MB/s) | ${t.name.substring(0, 60)}`);
+        const isDl = t.state.toLowerCase().includes("dl") && !t.state.toLowerCase().includes("pause");
+        if (isDl) activeDownloading++;
+        console.log(`  - [${t.state.padEnd(12)}] ${progressPct.padStart(5)}% (${speedMB.padStart(5)} MB/s) | ${t.name.substring(0, 50)}`);
       }
+      console.log(`\nActive downloading torrents: ${activeDownloading} / ${updatedInfo.length}`);
     }
 
     console.log("\n=====================================================");
-    console.log("  ALL DOWNLOAD SLOTS UNLOCKED!");
+    console.log("  CONCURRENCY UNLOCKED SUCCESSFULLY");
     console.log("=====================================================\n");
 
   } catch (err: any) {
-    Logger.error(`Error: ${err.message}`);
+    Logger.error(`Error unlocking qBittorrent: ${err.message}`);
   }
 }
 
