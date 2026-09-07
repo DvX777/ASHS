@@ -28,6 +28,21 @@ async function getQBCreds() {
   return { host: "127.0.0.1", port: 8080, user: "admin", pass: "adminadmin" };
 }
 
+async function waitForQBittorrent(url: string): Promise<boolean> {
+  console.log(`Waiting for qBittorrent web service at ${url}...`);
+  for (let i = 1; i <= 15; i++) {
+    try {
+      const res = await fetch(`${url}/api/v2/app/version`, { signal: AbortSignal.timeout(2000) });
+      if (res.ok) {
+        console.log(`[qBittorrent Ready] Version: ${await res.text()}`);
+        return true;
+      }
+    } catch {}
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  return false;
+}
+
 async function main() {
   console.log("=====================================================");
   console.log("  FORCE-UNLOCK ALL QBITTORRENT DOWNLOAD SLOTS");
@@ -35,6 +50,12 @@ async function main() {
 
   const creds = await getQBCreds();
   const qbUrl = `http://${creds.host}:${creds.port}`;
+
+  // Wait for daemon to be ready after restart
+  const ready = await waitForQBittorrent(qbUrl);
+  if (!ready) {
+    console.log(`[Warning] Could not ping ${qbUrl}/api/v2/app/version after 15s. Attempting login anyway...`);
+  }
 
   // 1. Authenticate
   let cookie = "";
@@ -54,7 +75,7 @@ async function main() {
       cookie = setCookie.split(";")[0];
       console.log(`[Auth] Logged in to qBittorrent successfully!`);
     } else {
-      console.log(`[Auth] No auth required on localhost.`);
+      console.log(`[Auth] Authentication response status: ${loginRes.status}`);
     }
   } catch (e: any) {
     Logger.error(`Login failed: ${e.message}`);
@@ -125,7 +146,7 @@ async function main() {
       }
 
       // Re-fetch to display updated states
-      await new Promise((r) => setTimeout(r, 1000));
+      await new Promise((r) => setTimeout(r, 1500));
       const updatedInfo = await (await fetch(`${qbUrl}/api/v2/torrents/info`, { headers: qbHeaders })).json();
 
       let activeDownloading = 0;
